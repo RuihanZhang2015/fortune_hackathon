@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 WORLD_PATH = ROOT / "gazebo" / "fortune_pick_draw.world"
 PIPER_URDF = Path("/Users/ruihanzhang/Documents/Gazebo/piper_ros/src/piper_description/urdf/piper_description.urdf")
 PIPER_MESH_ROOT = Path("/Users/ruihanzhang/Documents/Gazebo/piper_ros/src/piper_description/meshes")
+PEN_TIP_LOCAL = np.array([0.0, 0.0, -0.08])
+DRAW_PEN_RPY = (0.42, 0.30, -0.18)
+REST_PEN_RPY = (0.0, math.pi / 2.0, 0.0)
 
 
 def main() -> None:
@@ -40,6 +43,8 @@ def main() -> None:
         time.sleep(3.0)
 
     try:
+        if args.no_launch:
+            _ensure_wrist_camera_models(args.world_name)
         _play_pen_and_gripper(args.world_name, poses)
         print("Gazebo pick-up and drawing replay finished.")
     finally:
@@ -64,18 +69,22 @@ def _build_pick_and_draw_poses(
     above_first = np.array([first[0], first[1], 0.16])
 
     poses = []
-    poses += _segment(pen_rest, above_rest, 12, pitch=math.pi / 2.0)
-    poses += _segment(above_rest, above_rest + np.array([0.0, 0.0, 0.08]), 10, pitch=0.0)
-    poses += _segment(above_rest + np.array([0.0, 0.0, 0.08]), above_first, 22, pitch=0.0)
+    poses += _segment(pen_rest, above_rest, 12, rpy=REST_PEN_RPY)
+    poses += _segment(above_rest, above_rest + np.array([0.0, 0.0, 0.08]), 10, rpy=DRAW_PEN_RPY)
+    poses += _segment(
+        above_rest + np.array([0.0, 0.0, 0.08]),
+        _pen_center_for_tip(above_first, DRAW_PEN_RPY),
+        22,
+        rpy=DRAW_PEN_RPY,
+    )
 
     sampled = points[:: max(1, len(points) // drawing_samples)]
     for point in sampled:
-        # Gazebo pen link origin is at the pen center; tip is 8 cm below it.
-        center = np.array([point[0], point[1], point[2] + 0.08])
-        poses.append((center, (0.0, 0.0, 0.0)))
+        center = _pen_center_for_tip(point, DRAW_PEN_RPY)
+        poses.append((center, DRAW_PEN_RPY))
 
     final = poses[-1][0]
-    poses += _segment(final, final + np.array([0.0, 0.0, 0.12]), 16, pitch=0.0)
+    poses += _segment(final, final + np.array([0.0, 0.0, 0.12]), 16, rpy=DRAW_PEN_RPY)
     return poses
 
 
@@ -92,12 +101,26 @@ def _segment(
     start: np.ndarray,
     end: np.ndarray,
     steps: int,
-    pitch: float,
+    rpy: tuple[float, float, float],
 ) -> list[tuple[np.ndarray, tuple[float, float, float]]]:
     return [
-        (start + (end - start) * (i / max(1, steps - 1)), (0.0, pitch, 0.0))
+        (start + (end - start) * (i / max(1, steps - 1)), rpy)
         for i in range(steps)
     ]
+
+
+def _pen_center_for_tip(tip: np.ndarray, rpy: tuple[float, float, float]) -> np.ndarray:
+    return np.asarray(tip, dtype=float) - _rpy_matrix(*rpy) @ PEN_TIP_LOCAL
+
+
+def _pen_tip_from_pose(pos: np.ndarray, rpy: tuple[float, float, float]) -> np.ndarray:
+    return np.asarray(pos, dtype=float) + _rpy_matrix(*rpy) @ PEN_TIP_LOCAL
+
+
+def _grip_point_from_pen(pos: np.ndarray, rpy: tuple[float, float, float]) -> np.ndarray:
+    # Side-grip the upper half of the pen so a wrist camera can see past it.
+    local_grip = np.array([0.0, -0.042, 0.028])
+    return np.asarray(pos, dtype=float) + _rpy_matrix(*rpy) @ local_grip
 
 
 def _ink_segments(points: np.ndarray) -> list[tuple[np.ndarray, float, float]]:
@@ -142,8 +165,9 @@ def _write_world_with_trace(world: Path, segments: list[tuple[np.ndarray, float,
     trace = _trace_sdf(segments)
     piper = PiperVisualKinematics()
     exact_models = piper.model_sdf()
+    camera_models = _wrist_camera_sdf()
     output.write_text(
-        world_text.replace("  </world>", f"{trace}\n{exact_models}\n  </world>"),
+        world_text.replace("  </world>", f"{trace}\n{exact_models}\n{camera_models}\n  </world>"),
         encoding="utf-8",
     )
     return output
@@ -174,6 +198,74 @@ def _trace_sdf(segments: list[tuple[np.ndarray, float, float]]) -> str:
     return "<model name='ink_trace'><static>true</static><link name='ink_link'>" + "".join(visuals) + "</link></model>"
 
 
+def _wrist_camera_sdf() -> str:
+    return "\n".join(_wrist_camera_model_sdfs())
+
+
+def _wrist_camera_model_sdfs() -> list[str]:
+    return ["""
+    <model name="wrist_camera">
+      <static>false</static>
+      <pose>0 0 0.3 0 0 0</pose>
+      <link name="camera_link">
+        <visual name="body">
+          <geometry><box><size>0.032 0.024 0.018</size></box></geometry>
+          <material><diffuse>0.02 0.025 0.03 1</diffuse></material>
+        </visual>
+        <visual name="lens">
+          <pose>0.018 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.008</radius><length>0.006</length></cylinder></geometry>
+          <material><diffuse>0.1 0.35 0.85 1</diffuse></material>
+        </visual>
+      </link>
+    </model>""", """
+    <model name="camera_view_ray">
+      <static>false</static>
+      <pose>0 0 0.3 0 0 0</pose>
+      <link name="ray_link">
+        <visual name="ray">
+          <geometry><cylinder><radius>0.002</radius><length>0.16</length></cylinder></geometry>
+          <material>
+            <ambient>0.1 0.45 1.0 0.35</ambient>
+            <diffuse>0.1 0.45 1.0 0.35</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>"""]
+
+
+def _ensure_wrist_camera_models(world_name: str) -> None:
+    for sdf in _wrist_camera_model_sdfs():
+        model_name = "wrist_camera" if "wrist_camera" in sdf else "camera_view_ray"
+        req = f'sdf: """<sdf version="1.10">{sdf}</sdf>""" name: "{model_name}" allow_renaming: false'
+        _gz_service(
+            f"/world/{world_name}/create",
+            "gz.msgs.EntityFactory",
+            "gz.msgs.Boolean",
+            req,
+            timeout=1000,
+            quiet=True,
+        )
+
+
+def _camera_pose(
+    gripper_pos: np.ndarray,
+    look_target: np.ndarray,
+) -> tuple[np.ndarray, tuple[float, float, float], np.ndarray, tuple[float, float, float]]:
+    camera_pos = gripper_pos + np.array([0.035, -0.055, 0.025])
+    camera_rpy = _look_at_rpy(camera_pos, look_target, local_axis="x")
+
+    ray_delta = look_target - camera_pos
+    ray_length = float(np.linalg.norm(ray_delta))
+    if ray_length < 1e-6:
+        ray_delta = np.array([0.0, 0.0, -1.0])
+        ray_length = 1.0
+    ray_dir = ray_delta / ray_length
+    ray_pos = camera_pos + ray_dir * min(0.08, ray_length / 2.0)
+    ray_rpy = _look_at_rpy(ray_pos, ray_pos + ray_dir, local_axis="z")
+    return camera_pos, camera_rpy, ray_pos, ray_rpy
+
+
 def _play_pen_and_gripper(
     world_name: str,
     poses: list[tuple[np.ndarray, tuple[float, float, float]]],
@@ -182,10 +274,14 @@ def _play_pen_and_gripper(
     piper = PiperVisualKinematics()
     q = np.array([0.0, 1.05, -1.15, 0.0, 0.25, 0.0, 0.012, -0.012])
     for index, (pos, rpy) in enumerate(poses):
-        gripper_pos = pos + np.array([0.0, 0.0, 0.09])
+        tip = _pen_tip_from_pose(pos, rpy)
+        gripper_pos = _grip_point_from_pen(pos, rpy)
         q = piper.solve_for_gripper(gripper_pos, q)
+        camera_pos, camera_rpy, frustum_pos, frustum_rpy = _camera_pose(gripper_pos, tip)
         req = (
             "pose { " + _pose_request("pen", pos, rpy) + " } "
+            "pose { " + _pose_request("wrist_camera", camera_pos, camera_rpy) + " } "
+            "pose { " + _pose_request("camera_view_ray", frustum_pos, frustum_rpy) + " } "
             + piper.pose_vector(q)
         )
         _gz_service(
@@ -403,6 +499,39 @@ def _pose_from_transform(matrix: np.ndarray) -> tuple[np.ndarray, tuple[float, f
         pitch = math.atan2(-rot[2, 0], sy)
         yaw = 0.0
     return matrix[:3, 3].copy(), (roll, pitch, yaw)
+
+
+def _look_at_rpy(
+    origin: np.ndarray,
+    target: np.ndarray,
+    local_axis: str,
+) -> tuple[float, float, float]:
+    forward = np.asarray(target, dtype=float) - np.asarray(origin, dtype=float)
+    norm = float(np.linalg.norm(forward))
+    if norm < 1e-9:
+        return 0.0, 0.0, 0.0
+    forward = forward / norm
+
+    up_hint = np.array([0.0, 0.0, 1.0])
+    if abs(float(np.dot(forward, up_hint))) > 0.96:
+        up_hint = np.array([0.0, 1.0, 0.0])
+
+    if local_axis == "x":
+        x_axis = forward
+        y_axis = np.cross(up_hint, x_axis)
+        y_axis /= np.linalg.norm(y_axis)
+        z_axis = np.cross(x_axis, y_axis)
+    elif local_axis == "z":
+        z_axis = forward
+        x_axis = np.cross(up_hint, z_axis)
+        x_axis /= np.linalg.norm(x_axis)
+        y_axis = np.cross(z_axis, x_axis)
+    else:
+        raise ValueError(f"unsupported local axis {local_axis!r}")
+
+    rotation = np.column_stack([x_axis, y_axis, z_axis])
+    _, rpy = _pose_from_transform(_transform(np.zeros(3), rotation))
+    return rpy
 
 
 def _gz_service(
