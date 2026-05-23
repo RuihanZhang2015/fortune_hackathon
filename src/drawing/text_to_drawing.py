@@ -110,54 +110,47 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
     emotion = 40 + ((score * 11) % 56)
     caution = 25 + ((score * 5) % 46)
 
-    sun_radius = 0.043 + 0.00045 * (energy - 55)
-    star_size = 0.028 + 0.00035 * (opportunity - 45)
+    taiji_radius = 0.052 + 0.00022 * (energy - 55)
+    seal_size = 0.042 + 0.00018 * opportunity
     wave_amp = 0.010 + 0.00023 * (emotion - 40)
-    arrow_top = 0.035 + 0.0008 * opportunity
     caution_radius = 0.015 + 0.00018 * caution
 
     strokes = [
-        circle_points(center=(-0.135, 0.07), radius=sun_radius, samples=96),
-        circle_points(center=(-0.135, 0.07), radius=sun_radius * 0.45, samples=64),
-        *_sun_rays(center=(-0.135, 0.07), radius=sun_radius + 0.018),
-        star_points(center=(0.115, 0.078), outer_radius=star_size),
-        star_points(center=(0.155, 0.122), outer_radius=star_size * 0.42, tips=4),
-        wave_points(start=(-0.18, -0.105), width=0.36, amplitude=wave_amp, cycles=2.4),
-        arc_points(center=(0.0, -0.03), radius=0.085, start_angle=3.55, end_angle=5.75),
-        polyline_points([(-0.03, -0.052), (0.035, arrow_top), (0.088, 0.025)]),
-        polyline_points([(0.035, arrow_top), (0.018, arrow_top - 0.032)]),
-        polyline_points([(0.035, arrow_top), (0.061, arrow_top - 0.023)]),
-        triangle_points(center=(-0.02, 0.022), side=0.052),
-        circle_points(center=(0.165, -0.07), radius=caution_radius, samples=48),
-        polyline_points([(0.165, -0.095), (0.165, -0.052)]),
+        *_taiji_mark(center=(-0.125, 0.058), radius=taiji_radius),
+        *_trigram_mark(origin=(0.075, 0.108), width=0.105, gap=0.022, broken=score % 2 == 0),
+        *_talisman_mark(center=(0.02, 0.012), height=0.15, width=seal_size),
+        wave_points(start=(-0.185, -0.105), width=0.37, amplitude=wave_amp, cycles=2.8),
+        arc_points(center=(-0.02, -0.064), radius=0.085, start_angle=3.55, end_angle=5.85),
+        circle_points(center=(0.165, -0.072), radius=caution_radius, samples=48),
+        polyline_points([(0.165, -0.099), (0.165, -0.052)]),
+        star_points(center=(0.145, 0.025), outer_radius=0.023, tips=4),
     ]
     level = "偏旺" if score >= 67 else "平稳上升" if score >= 34 else "温和蓄力"
     best_window = "上午" if opportunity >= 72 else "下午" if emotion >= 70 else "傍晚前"
-    action = "主动发起一次沟通" if opportunity >= 70 else "把最重要的一件事先推进一小步"
-    caution_text = "别因为临时消息打乱节奏" if caution >= 50 else "注意留一点缓冲时间"
+    action = "先定心，再开口，把一个关键请求讲清楚" if opportunity >= 70 else "先收束杂念，把最重要的一件事推进一小步"
+    caution_text = "避开急躁和临时起意" if caution >= 50 else "给自己留一点静气和缓冲"
     reading = (
-        f"{today.isoformat()} 今日运势：{level}。"
-        f"能量 {energy}/100，机会 {opportunity}/100，情绪流动 {emotion}/100，提醒指数 {caution}/100。"
+        f"{today.isoformat()} 今日玄运：{level}。"
+        f"阳气 {energy}/100，机缘 {opportunity}/100，心潮 {emotion}/100，避忌 {caution}/100。"
     )
     interpretation = (
-        "这张运势图从左到右读：左上双层太阳代表今天的基础能量，"
-        f"太阳越大表示越适合把事情摊开做，今天能量值是 {energy}/100；"
-        "右上主星和小星代表外部机会，星越尖说明机会来得越突然，"
-        f"今天适合在{best_window}抓住一个明确窗口；"
-        "底部波浪代表情绪和沟通节奏，波幅较大时要先稳住语气再行动；"
-        "中间三角形是核心任务，表示今天最好只锁定一个主目标；"
-        "上升箭头是行动建议，"
-        f"建议你{action}；"
-        "右下圆点加竖线是提醒符号，"
-        f"{caution_text}。整体解读：今天不是靠硬冲取胜，而是靠清楚选择、及时表达和稳住节奏。"
+        "这张玄运图按道教符号从左到右、由上到下解读：左侧太极印是今日阴阳底盘，"
+        f"阳气值 {energy}/100，说明今天适合先稳住内在节奏，再把事情向外推进；"
+        "右上三爻卦是机缘门，完整横线代表可直接把握的机会，断线代表需要绕一步再进入，"
+        f"今天机缘值 {opportunity}/100，较适合在{best_window}做决定；"
+        "中央符箓是行动轴，竖线定心，折笔开路，左右短横像护符的门闩，表示先收束再突破；"
+        "底部云气线是心潮，波纹越明显，越提醒你说话做事要慢半拍；"
+        "右下朱砂点加竖线是避忌印，提示今天不要被杂念牵走，"
+        f"具体提醒是：{caution_text}。"
+        f"综合来看，今天的开运法是：{action}。这不是迷信式结论，而是把你的状态翻译成一张可执行的行动图。"
     )
     symbols = [
-        {"name": "double_sun", "meaning": f"energy {energy}/100"},
-        {"name": "main_star", "meaning": f"opportunity {opportunity}/100"},
-        {"name": "wave", "meaning": f"emotional rhythm {emotion}/100"},
-        {"name": "triangle", "meaning": "one central task"},
-        {"name": "rising_arrow", "meaning": f"action: {action}"},
-        {"name": "caution_mark", "meaning": caution_text},
+        {"name": "taiji_seal", "meaning": f"yin-yang baseline, yang energy {energy}/100"},
+        {"name": "three_line_hexagram", "meaning": f"opportunity gate {opportunity}/100"},
+        {"name": "talisman_axis", "meaning": "focus first, then act"},
+        {"name": "cloud_wave", "meaning": f"emotional current {emotion}/100"},
+        {"name": "cinnabar_caution_dot", "meaning": caution_text},
+        {"name": "guiding_star", "meaning": f"action: {action}"},
     ]
     return DrawingPlan(
         title="today_fortune",
@@ -198,6 +191,50 @@ def _sun_rays(center: tuple[float, float], radius: float) -> list[Stroke]:
         )
         rays.append(polyline_points([inner, outer]))
     return rays
+
+
+def _taiji_mark(center: tuple[float, float], radius: float) -> list[Stroke]:
+    return [
+        circle_points(center=center, radius=radius, samples=112),
+        arc_points(center=(center[0], center[1] + radius / 2.0), radius=radius / 2.0,
+                   start_angle=-math.pi / 2.0, end_angle=math.pi / 2.0, samples=42),
+        arc_points(center=(center[0], center[1] - radius / 2.0), radius=radius / 2.0,
+                   start_angle=math.pi / 2.0, end_angle=3.0 * math.pi / 2.0, samples=42),
+        circle_points(center=(center[0], center[1] + radius / 2.0), radius=radius * 0.12, samples=28),
+        circle_points(center=(center[0], center[1] - radius / 2.0), radius=radius * 0.12, samples=28),
+    ]
+
+
+def _trigram_mark(
+    origin: tuple[float, float],
+    width: float,
+    gap: float,
+    broken: bool,
+) -> list[Stroke]:
+    strokes = []
+    y_values = [origin[1], origin[1] - gap, origin[1] - 2.0 * gap]
+    for index, y in enumerate(y_values):
+        should_break = broken and index == 1
+        if should_break:
+            strokes.append(polyline_points([(origin[0], y), (origin[0] + width * 0.38, y)]))
+            strokes.append(polyline_points([(origin[0] + width * 0.62, y), (origin[0] + width, y)]))
+        else:
+            strokes.append(polyline_points([(origin[0], y), (origin[0] + width, y)]))
+    return strokes
+
+
+def _talisman_mark(center: tuple[float, float], height: float, width: float) -> list[Stroke]:
+    x, y = center
+    top = y + height / 2.0
+    bottom = y - height / 2.0
+    return [
+        polyline_points([(x, top), (x, bottom)]),
+        polyline_points([(x - width, top - 0.012), (x, top), (x + width, top - 0.012)]),
+        polyline_points([(x - width * 0.75, top - 0.045), (x + width * 0.75, top - 0.045)]),
+        polyline_points([(x - width * 0.65, y + 0.005), (x + width * 0.65, y - 0.015)]),
+        polyline_points([(x + width * 0.45, y + 0.03), (x - width * 0.2, y - 0.04), (x + width * 0.55, y - 0.075)]),
+        polyline_points([(x - width * 0.8, bottom + 0.018), (x, bottom), (x + width * 0.8, bottom + 0.018)]),
+    ]
 
 
 def _interpolate_strokes(strokes: list[np.ndarray], spacing: float) -> np.ndarray:
