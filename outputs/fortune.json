@@ -5,32 +5,32 @@
   "draw_z": 0.018,
   "travel_z": 0.09,
   "title": "today_fortune",
-  "reading": "2026-05-23 今日玄运：温和蓄力。阳气 81/100，机缘 74/100，心潮 46/100，避忌 63/100。",
-  "interpretation": "这张玄运图按道教符号从左到右、由上到下解读：左侧太极印是今日阴阳底盘，阳气值 81/100，说明今天适合先稳住内在节奏，再把事情向外推进；右上三爻卦是机缘门，完整横线代表可直接把握的机会，断线代表需要绕一步再进入，今天机缘值 74/100，较适合在上午做决定；中央符箓是行动轴，竖线定心，折笔开路，左右短横像护符的门闩，表示先收束再突破；底部云气线是心潮，波纹越明显，越提醒你说话做事要慢半拍；右下朱砂点加竖线是避忌印，提示今天不要被杂念牵走，具体提醒是：避开急躁和临时起意。综合来看，今天的开运法是：先定心，再开口，把一个关键请求讲清楚。这不是迷信式结论，而是把你的状态翻译成一张可执行的行动图。",
+  "reading": "2026-05-23 今日玄运：温和蓄力。阴阳相抱，机缘藏于静处；先守中线，再顺势开门。",
+  "interpretation": "这张玄运图不逐项报数，而看气势。左侧太极印为底盘，阴阳相抱，表示今日宜先安内，再向外行事；右上三爻卦为机缘门，线有连断，说明机会不是直落掌心，而要顺着缝隙进入；中央符箓为行动轴，竖线定心，折笔开路，像一道先收后放的符令；底部云气为心潮，提醒言语和决定都不宜太急；右下朱砂印为避忌，忌躁进，忌临时起意。若要取用此图，可在日光初明时行一件小而明确的事：定心而后言，择一事轻轻推开。",
   "symbols": [
     {
       "name": "taiji_seal",
-      "meaning": "yin-yang baseline, yang energy 81/100"
+      "meaning": "yin-yang baseline"
     },
     {
       "name": "three_line_hexagram",
-      "meaning": "opportunity gate 74/100"
+      "meaning": "opportunity hidden in timing"
     },
     {
       "name": "talisman_axis",
-      "meaning": "focus first, then act"
+      "meaning": "settle first, then open the path"
     },
     {
       "name": "cloud_wave",
-      "meaning": "emotional current 46/100"
+      "meaning": "emotional current"
     },
     {
       "name": "cinnabar_caution_dot",
-      "meaning": "避开急躁和临时起意"
+      "meaning": "忌躁进，忌临时起意"
     },
     {
       "name": "guiding_star",
-      "meaning": "action: 先定心，再开口，把一个关键请求讲清楚"
+      "meaning": "a small guiding sign"
     }
   ],
   "points": [

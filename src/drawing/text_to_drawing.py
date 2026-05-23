@@ -126,31 +126,27 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
         star_points(center=(0.145, 0.025), outer_radius=0.023, tips=4),
     ]
     level = "偏旺" if score >= 67 else "平稳上升" if score >= 34 else "温和蓄力"
-    best_window = "上午" if opportunity >= 72 else "下午" if emotion >= 70 else "傍晚前"
-    action = "先定心，再开口，把一个关键请求讲清楚" if opportunity >= 70 else "先收束杂念，把最重要的一件事推进一小步"
-    caution_text = "避开急躁和临时起意" if caution >= 50 else "给自己留一点静气和缓冲"
+    best_window = "日光初明时" if opportunity >= 72 else "午后气缓时" if emotion >= 70 else "暮色未沉时"
+    action = "定心而后言，择一事轻轻推开" if opportunity >= 70 else "收束杂念，守住一线清明"
+    caution_text = "忌躁进，忌临时起意" if caution >= 50 else "宜留余白，宜慢半拍"
     reading = (
         f"{today.isoformat()} 今日玄运：{level}。"
-        f"阳气 {energy}/100，机缘 {opportunity}/100，心潮 {emotion}/100，避忌 {caution}/100。"
+        "阴阳相抱，机缘藏于静处；先守中线，再顺势开门。"
     )
     interpretation = (
-        "这张玄运图按道教符号从左到右、由上到下解读：左侧太极印是今日阴阳底盘，"
-        f"阳气值 {energy}/100，说明今天适合先稳住内在节奏，再把事情向外推进；"
-        "右上三爻卦是机缘门，完整横线代表可直接把握的机会，断线代表需要绕一步再进入，"
-        f"今天机缘值 {opportunity}/100，较适合在{best_window}做决定；"
-        "中央符箓是行动轴，竖线定心，折笔开路，左右短横像护符的门闩，表示先收束再突破；"
-        "底部云气线是心潮，波纹越明显，越提醒你说话做事要慢半拍；"
-        "右下朱砂点加竖线是避忌印，提示今天不要被杂念牵走，"
-        f"具体提醒是：{caution_text}。"
-        f"综合来看，今天的开运法是：{action}。这不是迷信式结论，而是把你的状态翻译成一张可执行的行动图。"
+        "这张玄运图不逐项报数，而看气势。左侧太极印为底盘，阴阳相抱，表示今日宜先安内，"
+        "再向外行事；右上三爻卦为机缘门，线有连断，说明机会不是直落掌心，而要顺着缝隙进入；"
+        "中央符箓为行动轴，竖线定心，折笔开路，像一道先收后放的符令；"
+        "底部云气为心潮，提醒言语和决定都不宜太急；右下朱砂印为避忌，"
+        f"{caution_text}。若要取用此图，可在{best_window}行一件小而明确的事：{action}。"
     )
     symbols = [
-        {"name": "taiji_seal", "meaning": f"yin-yang baseline, yang energy {energy}/100"},
-        {"name": "three_line_hexagram", "meaning": f"opportunity gate {opportunity}/100"},
-        {"name": "talisman_axis", "meaning": "focus first, then act"},
-        {"name": "cloud_wave", "meaning": f"emotional current {emotion}/100"},
+        {"name": "taiji_seal", "meaning": "yin-yang baseline"},
+        {"name": "three_line_hexagram", "meaning": "opportunity hidden in timing"},
+        {"name": "talisman_axis", "meaning": "settle first, then open the path"},
+        {"name": "cloud_wave", "meaning": "emotional current"},
         {"name": "cinnabar_caution_dot", "meaning": caution_text},
-        {"name": "guiding_star", "meaning": f"action: {action}"},
+        {"name": "guiding_star", "meaning": "a small guiding sign"},
     ]
     return DrawingPlan(
         title="today_fortune",
