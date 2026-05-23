@@ -24,6 +24,7 @@ def main() -> None:
     write_toolpath_json(payload, args.output)
     print(f"wrote {args.output}")
     print(payload["reading"])
+    print(payload["interpretation"])
 
     if args.simulate:
         sim_cls = PiperDrawingSimulator if args.robot == "piper" else DrawingSimulator
@@ -37,4 +38,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

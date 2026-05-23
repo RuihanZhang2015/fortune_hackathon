@@ -19,7 +19,9 @@ class TextToDrawingTest(unittest.TestCase):
 
         self.assertEqual(payload["format"], "piper_toolpath_v1")
         self.assertEqual(payload["frame"], "canvas")
-        self.assertIn("fortune", payload["reading"])
+        self.assertIn("今日运势", payload["reading"])
+        self.assertIn("从左到右读", payload["interpretation"])
+        self.assertGreaterEqual(len(payload["symbols"]), 5)
         self.assertGreater(len(payload["points"]), 50)
 
         points = np.asarray(payload["points"])
@@ -41,4 +43,3 @@ class TextToDrawingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
