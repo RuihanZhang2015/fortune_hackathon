@@ -61,6 +61,18 @@ Preview that same natural-language request in MuJoCo:
 python -m drawing.run_text "给我一些今天的运势分析，帮我画一个画" --simulate --hold
 ```
 
+## Gazebo pick-up and drawing demo
+
+This launches a Gazebo world with a table, paper, pen, ghost gripper, and ink
+trace. The pen is moved through a pick-up motion, then follows the generated
+fortune toolpath over the paper.
+
+```bash
+python -m drawing.gazebo_demo --toolpath outputs/fortune.json
+```
+
+Use `--headless` to run the Gazebo server without the GUI.
+
 ## Coordinate model
 
 Canvas coordinates are meters in the drawing plane:
