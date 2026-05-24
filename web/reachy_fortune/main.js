@@ -1,5 +1,6 @@
 let pc;
 let dc;
+const handledToolCalls = new Set();
 
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
@@ -9,6 +10,8 @@ const logEl = document.querySelector("#log");
 const imageEl = document.querySelector("#fortuneImage");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
+const reachyOutputEl = document.querySelector("#reachyOutput");
+const audioOutputEl = document.querySelector("#audioOutput");
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -25,6 +28,9 @@ disconnectButton.addEventListener("click", disconnectRealtime);
 fortuneButton.addEventListener("click", () => {
   sendUserText("你能给我分析今天的运势，并画一张道教大师用毛笔写出来的运势图吗？");
 });
+audioOutputEl.addEventListener("change", applyAudioOutputDevice);
+refreshReachyStatus();
+refreshAudioOutputDevices();
 
 async function connectRealtime() {
   setStatus("Requesting microphone...");
@@ -35,12 +41,21 @@ async function connectRealtime() {
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   pc.addTrack(stream.getAudioTracks()[0]);
+  await refreshAudioOutputDevices();
+  await applyAudioOutputDevice();
 
   dc = pc.createDataChannel("oai-events");
   dc.addEventListener("open", () => {
     setStatus("Connected. Speak to Reachy.");
     connectButton.disabled = true;
     disconnectButton.disabled = false;
+    dc.send(JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["audio"],
+        instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
+      },
+    }));
   });
   dc.addEventListener("message", handleRealtimeEvent);
 
@@ -88,20 +103,29 @@ function sendUserText(text) {
 
 async function handleRealtimeEvent(raw) {
   const event = JSON.parse(raw.data);
-  if (event.type === "response.audio_transcript.done" && event.transcript) {
+  if (event.type === "error") {
+    log("Realtime error", event);
+  }
+  if ((event.type === "response.output_audio_transcript.done" || event.type === "response.audio_transcript.done") && event.transcript) {
     log(`Reachy: ${event.transcript}`);
-    fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
+    if (reachyOutputEl.checked) {
+      fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
+    }
   }
   if (event.type === "conversation.item.input_audio_transcription.completed") {
     log(`You: ${event.transcript}`);
   }
-  const item = event.item || event.response?.output?.find((x) => x.type === "function_call");
-  if (item && item.type === "function_call" && item.name === "robot_draw") {
-    await handleRobotDrawCall(item);
+  if (event.type === "response.done") {
+    const calls = event.response?.output?.filter((x) => x.type === "function_call" && x.name === "robot_draw") || [];
+    for (const item of calls) {
+      await handleRobotDrawCall(item);
+    }
   }
 }
 
 async function handleRobotDrawCall(item) {
+  if (handledToolCalls.has(item.call_id)) return;
+  handledToolCalls.add(item.call_id);
   let args = {};
   try {
     args = JSON.parse(item.arguments || "{}");
@@ -115,12 +139,18 @@ async function handleRobotDrawCall(item) {
     body: JSON.stringify({
       prompt: args.prompt || "给我分析今天的运势",
       style: args.style || "道教符箓、毛笔、玄妙、抽象",
+      reachy_output: reachyOutputEl.checked,
     }),
   }).then((r) => r.json());
 
   imageEl.src = `${result.image_url}?t=${Date.now()}`;
   interpretationEl.textContent = result.interpretation;
-  log("Tool result", { point_count: result.point_count, image_url: result.image_url });
+  log("Tool result", {
+    point_count: result.point_count,
+    image_url: result.image_url,
+    reachy_output: result.reachy_output,
+    reachy_mode: result.reachy_mode,
+  });
 
   dc.send(JSON.stringify({
     type: "conversation.item.create",
@@ -130,5 +160,49 @@ async function handleRobotDrawCall(item) {
       output: JSON.stringify(result),
     },
   }));
-  dc.send(JSON.stringify({ type: "response.create" }));
+  dc.send(JSON.stringify({
+    type: "response.create",
+    response: {
+      modalities: ["audio"],
+      instructions: "请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。",
+    },
+  }));
+}
+
+async function refreshReachyStatus() {
+  try {
+    const status = await fetch("/api/reachy/status").then((r) => r.json());
+    log("Reachy status", status);
+  } catch {
+    log("Reachy status unavailable.");
+  }
+}
+
+async function refreshAudioOutputDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const selected = audioOutputEl.value;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const outputs = devices.filter((device) => device.kind === "audiooutput");
+  audioOutputEl.textContent = "";
+  audioOutputEl.append(new Option("System default", ""));
+  for (const device of outputs) {
+    const label = device.label || `Speaker ${audioOutputEl.length}`;
+    audioOutputEl.append(new Option(label, device.deviceId));
+  }
+  if ([...audioOutputEl.options].some((option) => option.value === selected)) {
+    audioOutputEl.value = selected;
+  }
+  audioOutputEl.disabled = typeof remoteAudio.setSinkId !== "function";
+}
+
+async function applyAudioOutputDevice() {
+  if (typeof remoteAudio.setSinkId !== "function") {
+    return;
+  }
+  try {
+    await remoteAudio.setSinkId(audioOutputEl.value);
+    log("Audio output selected", { device: audioOutputEl.selectedOptions[0]?.text || "System default" });
+  } catch (error) {
+    log("Audio output selection failed", { message: error.message });
+  }
 }

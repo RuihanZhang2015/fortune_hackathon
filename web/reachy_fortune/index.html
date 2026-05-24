@@ -15,6 +15,18 @@
           <button id="fortune">Ask fortune</button>
           <button id="disconnect" disabled>Disconnect</button>
         </div>
+        <div class="output-panel">
+          <label class="toggle">
+            <input id="reachyOutput" type="checkbox" checked />
+            <span>Output to Reachy Mini</span>
+          </label>
+          <label class="device-picker">
+            <span>Audio output</span>
+            <select id="audioOutput">
+              <option value="">System default</option>
+            </select>
+          </label>
+        </div>
         <p id="status">Idle</p>
         <audio id="remoteAudio" autoplay></audio>
         <pre id="log"></pre>
@@ -27,4 +39,3 @@
     <script src="/static/main.js"></script>
   </body>
 </html>
-

@@ -34,6 +34,7 @@ reachy = ReachyController()
 class RobotDrawRequest(BaseModel):
     prompt: str = "给我分析今天的运势"
     style: str = "道教符箓、毛笔、玄妙、抽象"
+    reachy_output: bool = True
 
 
 class SayRequest(BaseModel):
@@ -56,9 +57,15 @@ async def create_realtime_session(request: Request) -> str:
     session = {
         "type": "realtime",
         "model": MODEL,
+        "output_modalities": ["audio"],
         "instructions": _instructions(),
         "audio": {
-            "output": {"voice": VOICE},
+            "input": {
+                "turn_detection": {"type": "semantic_vad"},
+            },
+            "output": {
+                "voice": VOICE,
+            },
         },
         "tools": [_robot_draw_tool()],
         "tool_choice": "auto",
@@ -94,7 +101,8 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     render_toolpath_png(payload, image_path)
 
-    reachy.express("mystical")
+    if request.reachy_output:
+        reachy.express("mystical")
     return {
         "ok": True,
         "title": payload["title"],
@@ -104,6 +112,8 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         "toolpath_url": "/api/latest_toolpath.json",
         "tool_call": payload["robot_draw_tool_call"],
         "point_count": len(points_xy),
+        "reachy_output": request.reachy_output,
+        "reachy_mode": reachy.mode,
     }
 
 
@@ -182,4 +192,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

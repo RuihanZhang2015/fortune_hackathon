@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -24,7 +25,19 @@ class ReachyFortuneAppTest(unittest.TestCase):
         self.assertEqual(image_response.status_code, 200)
         self.assertEqual(image_response.headers["content-type"], "image/png")
 
+    def test_robot_draw_can_skip_reachy_output(self):
+        client = TestClient(app)
+        with patch("reachy_fortune.app.reachy.express") as express:
+            response = client.post(
+                "/api/robot_draw",
+                json={"prompt": "今天运势", "reachy_output": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["reachy_output"])
+        express.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
-

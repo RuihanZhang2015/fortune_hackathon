@@ -32,7 +32,10 @@ class ReachyController:
             print(f"[Reachy speech route] {text}")
             return
         if sys.platform == "darwin":
-            threading.Thread(target=lambda: subprocess.run(["say", text], check=False), daemon=True).start()
+            threading.Thread(
+                target=lambda: subprocess.run(["say", "-v", "Tingting", text], check=False),
+                daemon=True,
+            ).start()
         else:
             print(f"[Reachy dry-run say] {text}")
 
@@ -79,4 +82,3 @@ class ReachyController:
         except Exception as exc:
             print(f"[Reachy SDK expression failed] {exc}")
             self.mode = "dry-run"
-

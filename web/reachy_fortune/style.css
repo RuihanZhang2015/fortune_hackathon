@@ -25,6 +25,50 @@ h1 {
   flex-wrap: wrap;
 }
 
+.output-panel {
+  display: grid;
+  grid-template-columns: minmax(190px, auto) minmax(220px, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 8px;
+}
+
+.toggle,
+.device-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  background: rgba(255, 252, 245, 0.56);
+  border: 1px solid #c8b99d;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.toggle input {
+  width: 17px;
+  height: 17px;
+}
+
+.device-picker {
+  justify-content: space-between;
+}
+
+.device-picker span {
+  flex: 0 0 auto;
+}
+
+select {
+  width: min(260px, 100%);
+  border: 1px solid #9d8c70;
+  border-radius: 5px;
+  background: #fffaf0;
+  color: #201b16;
+  padding: 7px 8px;
+  font-size: 14px;
+}
+
 button {
   border: 1px solid #3b3328;
   background: #2d261d;
@@ -79,5 +123,8 @@ button:disabled {
     grid-template-columns: 1fr;
     padding: 18px;
   }
-}
 
+  .output-panel {
+    grid-template-columns: 1fr;
+  }
+}
