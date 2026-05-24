@@ -6,6 +6,7 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAAC
 
 const connectButton = document.querySelector("#connect");
 const sendTestButton = document.querySelector("#sendTest");
+const manualToolButton = document.querySelector("#manualTool");
 const muteMicButton = document.querySelector("#mutemic");
 const disconnectButton = document.querySelector("#disconnect");
 const statusEl = document.querySelector("#status");
@@ -13,6 +14,7 @@ const logEl = document.querySelector("#log");
 const transcriptEl = document.querySelector("#transcript");
 const canvasEl = document.querySelector("#fortuneCanvas");
 const interpretationEl = document.querySelector("#interpretation");
+const manualToolOutputEl = document.querySelector("#manualToolOutput");
 const remoteAudio = document.querySelector("#remoteAudio");
 const speakerTargetEl = document.querySelector("#speakerTarget");
 const audioOutputEl = document.querySelector("#audioOutput");
@@ -64,13 +66,52 @@ function drawStrokesOnCanvas(strokes) {
   ctx.strokeRect(margin - 20, margin - 20, size - 2 * (margin - 20), size - 2 * (margin - 20));
 }
 
+async function drawRenderedImageOnCanvas(imageUrl) {
+  if (!imageUrl) return;
+  const image = new Image();
+  image.decoding = "async";
+  await new Promise((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Failed to load rendered image"));
+    image.src = imageUrl;
+  });
+  const ctx = canvasEl.getContext("2d");
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  ctx.drawImage(image, 0, 0, canvasEl.width, canvasEl.height);
+}
+
 connectButton.addEventListener("click", connectRealtime);
 sendTestButton.addEventListener("click", () => sendUserText("Please reply in English: voice test successful."));
+manualToolButton.addEventListener("click", triggerManualToolCall);
 muteMicButton.addEventListener("click", toggleMicMute);
 disconnectButton.addEventListener("click", disconnectRealtime);
 speakerTargetEl.addEventListener("change", applyAudioOutputDevice);
 audioOutputEl.addEventListener("change", applyAudioOutputDevice);
 refreshAudioOutputDevices();
+
+async function triggerManualToolCall() {
+  manualToolButton.disabled = true;
+  setStatus("Manually triggering robot_draw...");
+  const manualArgs = {
+    prompt: "给我分析今天的运势",
+    style: "极简道教符箓、最多三个元素、直线折线、少于100个轨迹点、留白",
+    title: "manual_fortune",
+  };
+  renderManualToolOutput("Manual request", manualArgs);
+  try {
+    await handleRobotDrawCall({
+      call_id: `manual_${Date.now()}`,
+      arguments: JSON.stringify(manualArgs),
+    }, "manual");
+  } finally {
+    manualToolButton.disabled = false;
+  }
+}
+
+function renderManualToolOutput(title, payload) {
+  if (!manualToolOutputEl) return;
+  manualToolOutputEl.textContent = `${title}\n${JSON.stringify(payload, null, 2)}`;
+}
 
 async function connectRealtime() {
   try {
@@ -387,7 +428,7 @@ function renderTranscript() {
   ].filter(Boolean).join("\n\n");
 }
 
-async function handleRobotDrawCall(item) {
+async function handleRobotDrawCall(item, source = "auto") {
   if (!item.call_id || handledToolCalls.has(item.call_id)) return;
   handledToolCalls.add(item.call_id);
   pendingToolCalls.delete(item.call_id);
@@ -397,7 +438,7 @@ async function handleRobotDrawCall(item) {
   } catch {
     args = {};
   }
-  log("Tool call: robot_draw", { call_id: item.call_id, title: args.title, reading: args.reading });
+  log("Tool call: robot_draw", { call_id: item.call_id, source, title: args.title, reading: args.reading });
   setStatus("Drawing fortune...");
 
   // Render strokes on canvas immediately — no network roundtrip needed.
@@ -438,6 +479,26 @@ async function handleRobotDrawCall(item) {
       throw new Error(result.detail || result.error || `robot_draw failed with HTTP ${response.status}`);
     }
     interpretationEl.textContent = result.interpretation || args.interpretation || "";
+    if (result.image_url) {
+      try {
+        await drawRenderedImageOnCanvas(`${result.image_url}${result.image_url.includes("?") ? "&" : "?"}t=${Date.now()}`);
+      } catch (imageError) {
+        log("Render image load failed", { message: formatError(imageError), image_url: result.image_url });
+      }
+    }
+    if (source === "manual") {
+      renderManualToolOutput("Manual result", {
+        request: {
+          prompt: args.prompt || "给我分析今天的运势",
+          style: args.style || "道教符箓、毛笔、玄妙、抽象",
+          title: args.title || null,
+          reading: args.reading || null,
+          interpretation: args.interpretation || null,
+          strokes_count: Array.isArray(args.strokes) ? args.strokes.length : 0,
+        },
+        response: compactRobotDrawResult(result),
+      });
+    }
     setStatus("Fortune drawing ready.");
     log("Backend result", {
       ...compactRobotDrawResult(result),
@@ -446,6 +507,16 @@ async function handleRobotDrawCall(item) {
   } catch (error) {
     const message = formatError(error);
     setStatus(`robot_draw backend failed: ${message}`);
+    if (source === "manual") {
+      renderManualToolOutput("Manual error", {
+        message,
+        request: {
+          prompt: args.prompt || "给我分析今天的运势",
+          style: args.style || "道教符箓、毛笔、玄妙、抽象",
+          title: args.title || null,
+        },
+      });
+    }
     log("Backend error", { message });
   }
 }

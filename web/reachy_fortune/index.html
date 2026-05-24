@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Reachy Fortune Sketch</title>
-    <link rel="stylesheet" href="/static/style.css?v=6" />
+    <link rel="stylesheet" href="/static/style.css?v=7" />
   </head>
   <body>
     <main>
@@ -13,6 +13,7 @@
         <div class="controls">
           <button id="connect">Connect voice</button>
           <button id="sendTest" disabled>Send test</button>
+          <button id="manualTool">Manual tool call</button>
           <button id="mutemic" disabled>Mute mic</button>
           <button id="disconnect" disabled>Disconnect</button>
         </div>
@@ -42,8 +43,12 @@
       <section class="right">
         <canvas id="fortuneCanvas" width="900" height="900"></canvas>
         <p id="interpretation"></p>
+        <section class="manual-panel">
+          <h2>Manual tool call</h2>
+          <pre id="manualToolOutput">No manual tool call yet.</pre>
+        </section>
       </section>
     </main>
-    <script src="/static/main.js?v=6"></script>
+    <script src="/static/main.js?v=9"></script>
   </body>
 </html>
