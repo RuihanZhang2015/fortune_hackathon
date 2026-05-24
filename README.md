@@ -83,6 +83,15 @@ export OPENAI_API_KEY=...
 python -m reachy_fortune.app
 ```
 
+For noisy rooms, tune the Realtime VAD before launch:
+
+```bash
+export OPENAI_VAD_THRESHOLD=0.8
+export OPENAI_VAD_SILENCE_DURATION_MS=1000
+export OPENAI_VAD_INTERRUPT_RESPONSE=false
+export OPENAI_NOISE_REDUCTION=far_field
+```
+
 Open `http://127.0.0.1:8787`, click `Connect voice`, then ask:
 
 ```text

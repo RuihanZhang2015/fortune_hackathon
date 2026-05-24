@@ -42,6 +42,12 @@ _load_dotenv(ROOT / ".env")
 MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2")
 VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
 TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
+VAD_THRESHOLD = float(os.getenv("OPENAI_VAD_THRESHOLD", "0.75"))
+VAD_PREFIX_PADDING_MS = int(os.getenv("OPENAI_VAD_PREFIX_PADDING_MS", "300"))
+VAD_SILENCE_DURATION_MS = int(os.getenv("OPENAI_VAD_SILENCE_DURATION_MS", "900"))
+VAD_CREATE_RESPONSE = os.getenv("OPENAI_VAD_CREATE_RESPONSE", "true").lower() == "true"
+VAD_INTERRUPT_RESPONSE = os.getenv("OPENAI_VAD_INTERRUPT_RESPONSE", "false").lower() == "true"
+NOISE_REDUCTION = os.getenv("OPENAI_NOISE_REDUCTION", "far_field")
 
 app = FastAPI(title="Reachy Fortune Conversation")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -78,9 +84,22 @@ async def create_realtime_session(request: Request) -> str:
         "instructions": _instructions(),
         "audio": {
             "input": {
+                "noise_reduction": (
+                    None
+                    if NOISE_REDUCTION.lower() in {"", "none", "null", "off"}
+                    else {"type": NOISE_REDUCTION}
+                ),
                 "transcription": {
                     "model": TRANSCRIPTION_MODEL,
                     "language": "zh",
+                },
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": VAD_THRESHOLD,
+                    "prefix_padding_ms": VAD_PREFIX_PADDING_MS,
+                    "silence_duration_ms": VAD_SILENCE_DURATION_MS,
+                    "create_response": VAD_CREATE_RESPONSE,
+                    "interrupt_response": VAD_INTERRUPT_RESPONSE,
                 },
             },
             "output": {
