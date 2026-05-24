@@ -12,19 +12,9 @@
         <h1>Reachy 玄运对话</h1>
         <div class="controls">
           <button id="connect">Connect voice</button>
-          <button id="fortune">Ask fortune</button>
-          <button id="playAudio">Play audio</button>
           <button id="disconnect" disabled>Disconnect</button>
         </div>
         <div class="output-panel">
-          <label class="toggle">
-            <input id="reachyOutput" type="checkbox" checked />
-            <span>Output to Reachy Mini</span>
-          </label>
-          <label class="toggle">
-            <input id="localSpeech" type="checkbox" checked />
-            <span>Speak transcript locally</span>
-          </label>
           <label class="device-picker">
             <span>Audio output</span>
             <select id="audioOutput">
@@ -33,9 +23,12 @@
           </label>
         </div>
         <p id="status">Idle</p>
-        <audio id="remoteAudio" autoplay playsinline controls></audio>
-        <div id="transcript" aria-live="polite"></div>
-        <pre id="log"></pre>
+        <audio id="remoteAudio" autoplay playsinline></audio>
+        <details class="debug-panel">
+          <summary>Debug transcript</summary>
+          <div id="transcript" aria-live="polite"></div>
+          <pre id="log"></pre>
+        </details>
       </section>
       <section class="right">
         <img id="fortuneImage" alt="fortune drawing render" />

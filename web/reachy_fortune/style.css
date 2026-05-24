@@ -27,13 +27,12 @@ h1 {
 
 .output-panel {
   display: grid;
-  grid-template-columns: minmax(190px, auto) minmax(190px, auto) minmax(220px, 1fr);
+  grid-template-columns: minmax(220px, 1fr);
   gap: 10px;
   align-items: center;
   margin: 14px 0 8px;
 }
 
-.toggle,
 .device-picker {
   display: flex;
   align-items: center;
@@ -44,11 +43,6 @@ h1 {
   border: 1px solid #c8b99d;
   border-radius: 6px;
   font-size: 14px;
-}
-
-.toggle input {
-  width: 17px;
-  height: 17px;
 }
 
 .device-picker {
@@ -103,6 +97,16 @@ button:disabled {
   background: #fffaf0;
   border: 1px solid #bda985;
   border-radius: 6px;
+}
+
+.debug-panel {
+  margin-top: 10px;
+}
+
+.debug-panel summary {
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 10px;
 }
 
 #log {

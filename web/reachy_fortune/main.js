@@ -4,20 +4,15 @@ const handledToolCalls = new Set();
 
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
-const fortuneButton = document.querySelector("#fortune");
-const playAudioButton = document.querySelector("#playAudio");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
 const transcriptEl = document.querySelector("#transcript");
 const imageEl = document.querySelector("#fortuneImage");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
-const reachyOutputEl = document.querySelector("#reachyOutput");
-const localSpeechEl = document.querySelector("#localSpeech");
 const audioOutputEl = document.querySelector("#audioOutput");
 let assistantTranscript = "";
 let userTranscript = "";
-let lastSpokenText = "";
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -31,12 +26,7 @@ function setStatus(text) {
 
 connectButton.addEventListener("click", connectRealtime);
 disconnectButton.addEventListener("click", disconnectRealtime);
-playAudioButton.addEventListener("click", () => ensureRemoteAudioPlaying("manual"));
-fortuneButton.addEventListener("click", () => {
-  sendUserText("你能给我分析今天的运势，并画一张道教大师用毛笔写出来的运势图吗？");
-});
 audioOutputEl.addEventListener("change", applyAudioOutputDevice);
-refreshReachyStatus();
 refreshAudioOutputDevices();
 
 async function connectRealtime() {
@@ -74,6 +64,7 @@ async function connectRealtime() {
     dc.send(JSON.stringify({
       type: "response.create",
       response: {
+        output_modalities: ["audio"],
         instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
       },
     }));
@@ -152,7 +143,12 @@ function sendUserText(text) {
       content: [{ type: "input_text", text }],
     },
   }));
-  dc.send(JSON.stringify({ type: "response.create" }));
+  dc.send(JSON.stringify({
+    type: "response.create",
+    response: {
+      output_modalities: ["audio"],
+    },
+  }));
 }
 
 async function handleRealtimeEvent(raw) {
@@ -168,10 +164,7 @@ async function handleRealtimeEvent(raw) {
     assistantTranscript = event.transcript;
     renderTranscript();
     log(`Reachy transcript: ${event.transcript}`);
-    speakTranscriptLocally(event.transcript);
-    if (reachyOutputEl.checked) {
-      fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
-    }
+    fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
   }
   if (event.type === "response.output_text.delta" || event.type === "response.text.delta") {
     assistantTranscript += event.delta || "";
@@ -181,7 +174,6 @@ async function handleRealtimeEvent(raw) {
     assistantTranscript = event.text;
     renderTranscript();
     log(`Reachy text: ${event.text}`);
-    speakTranscriptLocally(event.text);
   }
   if (event.type === "conversation.item.input_audio_transcription.delta") {
     userTranscript += event.delta || "";
@@ -211,7 +203,6 @@ function captureTranscriptFromResponse(response) {
     assistantTranscript = text;
     renderTranscript();
     log(`Reachy transcript fallback: ${text}`);
-    speakTranscriptLocally(text);
   }
 }
 
@@ -220,17 +211,6 @@ function renderTranscript() {
     userTranscript ? `You: ${userTranscript}` : "",
     assistantTranscript ? `Reachy: ${assistantTranscript}` : "",
   ].filter(Boolean).join("\n\n");
-}
-
-function speakTranscriptLocally(text) {
-  const cleanText = (text || "").trim();
-  if (!localSpeechEl.checked || !cleanText || cleanText === lastSpokenText) return;
-  lastSpokenText = cleanText;
-  fetch("/api/local/say", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: cleanText }),
-  }).catch((error) => log("Local speech failed", { message: error.message }));
 }
 
 async function handleRobotDrawCall(item) {
@@ -249,7 +229,7 @@ async function handleRobotDrawCall(item) {
     body: JSON.stringify({
       prompt: args.prompt || "给我分析今天的运势",
       style: args.style || "道教符箓、毛笔、玄妙、抽象",
-      reachy_output: reachyOutputEl.checked,
+      reachy_output: true,
     }),
   }).then((r) => r.json());
 
@@ -273,18 +253,10 @@ async function handleRobotDrawCall(item) {
   dc.send(JSON.stringify({
     type: "response.create",
     response: {
+      output_modalities: ["audio"],
       instructions: "请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。",
     },
   }));
-}
-
-async function refreshReachyStatus() {
-  try {
-    const status = await fetch("/api/reachy/status").then((r) => r.json());
-    log("Reachy status", status);
-  } catch {
-    log("Reachy status unavailable.");
-  }
 }
 
 async function refreshAudioOutputDevices() {

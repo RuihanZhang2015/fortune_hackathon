@@ -22,8 +22,9 @@ STATIC_DIR = ROOT / "web" / "reachy_fortune"
 OUTPUT_DIR = ROOT / "outputs" / "reachy_fortune"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
+MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2")
 VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
+TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
 
 app = FastAPI(title="Reachy Fortune Conversation")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -59,6 +60,12 @@ async def create_realtime_session(request: Request) -> str:
         "model": MODEL,
         "instructions": _instructions(),
         "audio": {
+            "input": {
+                "transcription": {
+                    "model": TRANSCRIPTION_MODEL,
+                    "language": "zh",
+                },
+            },
             "output": {
                 "voice": VOICE,
             },
