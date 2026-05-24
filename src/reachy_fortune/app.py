@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,7 @@ from drawing.text_to_drawing import toolpath_payload_from_strokes, toolpath_payl
 
 from .pub_to_ngrok import points3d_from_mapped_payload, publish_trajectory
 from .reachy import ReachyController
-from .render import render_toolpath_png
+from .render import render_strokes_png, render_toolpath_png
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -145,7 +145,7 @@ async def create_realtime_session(request: Request) -> str:
 
 
 @app.post("/api/robot_draw")
-def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
+def robot_draw(request: RobotDrawRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     drawing_seed = request.drawing_seed or uuid4().hex
     logger.info(
         "robot_draw requested prompt=%r reachy_output=%s drawing_seed=%s llm_strokes=%s",
@@ -154,17 +154,59 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         drawing_seed,
         len(request.strokes) if request.strokes else 0,
     )
+    image_path = OUTPUT_DIR / "latest_fortune.png"
+
     if request.strokes:
+        # Render PNG immediately from raw LLM strokes (fast, <5ms).
+        # Full interpolated toolpath for ngrok runs in the background.
+        render_strokes_png(request.strokes, image_path)
+        background_tasks.add_task(_build_and_publish_toolpath, request, drawing_seed)
+        point_count = sum(len(s) for s in request.strokes)
+    else:
+        prompt = f"{request.prompt}。风格：{request.style}"
+        payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
+        payload["drawing_seed"] = drawing_seed
+        _save_and_publish_payload(payload)
+        render_toolpath_png(payload, image_path)
+        point_count = len(payload["points"])
+
+    if request.reachy_output:
+        reachy.express("mystical")
+
+    logger.info("robot_draw image rendered drawing_seed=%s point_count=%s", drawing_seed, point_count)
+    return {
+        "ok": True,
+        "title": request.title or drawing_seed,
+        "interpretation": request.interpretation or "",
+        "symbols": [],
+        "image_url": "/api/latest_render.png",
+        "toolpath_url": "/api/latest_toolpath.json",
+        "coordinates_url": "/api/latest_coordinates.json",
+        "arm_publish": {"ok": True, "skipped": True, "reason": "publishing in background"},
+        "tool_call": None,
+        "point_count": point_count,
+        "drawing_seed": drawing_seed,
+        "reachy_output": request.reachy_output,
+        "reachy_mode": reachy.mode,
+    }
+
+
+def _build_and_publish_toolpath(request: RobotDrawRequest, drawing_seed: str) -> None:
+    try:
         payload = toolpath_payload_from_strokes(
             strokes_xy=request.strokes,
             title=request.title or "llm_fortune",
             reading=request.reading or "",
             interpretation=request.interpretation or "",
         )
-    else:
-        prompt = f"{request.prompt}。风格：{request.style}"
-        payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
-    payload["drawing_seed"] = drawing_seed
+        payload["drawing_seed"] = drawing_seed
+        _save_and_publish_payload(payload)
+        logger.info("background toolpath done title=%r points=%s", payload["title"], len(payload["points"]))
+    except Exception:
+        logger.exception("background toolpath failed")
+
+
+def _save_and_publish_payload(payload: dict[str, Any]) -> None:
     segments_xy = _drawing_xy_segments(payload["points"], float(payload["draw_z"]))
     points_xy = [point for segment in segments_xy for point in segment]
     payload["robot_draw_tool_call"] = {
@@ -174,40 +216,14 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         "xy_segments": segments_xy,
         "xy_points": points_xy,
     }
-
-    json_path = OUTPUT_DIR / "latest_fortune_toolpath.json"
-    mapped_json_path = OUTPUT_DIR / "latest_fortune_mapped.json"
-    image_path = OUTPUT_DIR / "latest_fortune.png"
     mapped_payload = _mapped_coordinates_payload(payload)
-    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    mapped_json_path.write_text(json.dumps(mapped_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    render_toolpath_png(payload, image_path)
-    publish_result = _publish_to_arm_ngrok(mapped_payload)
-
-    logger.info(
-        "robot_draw generated title=%r point_count=%s image_path=%s",
-        payload["title"],
-        len(points_xy),
-        image_path,
+    (OUTPUT_DIR / "latest_fortune_toolpath.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-
-    if request.reachy_output:
-        reachy.express("mystical")
-    return {
-        "ok": True,
-        "title": payload["title"],
-        "interpretation": payload["interpretation"],
-        "symbols": payload["symbols"],
-        "image_url": "/api/latest_render.png",
-        "toolpath_url": "/api/latest_toolpath.json",
-        "coordinates_url": "/api/latest_coordinates.json",
-        "arm_publish": publish_result,
-        "tool_call": payload["robot_draw_tool_call"],
-        "point_count": len(points_xy),
-        "drawing_seed": drawing_seed,
-        "reachy_output": request.reachy_output,
-        "reachy_mode": reachy.mode,
-    }
+    (OUTPUT_DIR / "latest_fortune_mapped.json").write_text(
+        json.dumps(mapped_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    _publish_to_arm_ngrok(mapped_payload)
 
 
 def _mapped_coordinates_payload(payload: dict[str, Any]) -> dict[str, Any]:

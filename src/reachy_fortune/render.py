@@ -35,3 +35,26 @@ def render_toolpath_png(payload: dict[str, Any], output_path: str | Path, size: 
     draw.rectangle([margin - 20, margin - 20, size - margin + 20, size - margin + 20], outline=(190, 164, 122), width=2)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path)
+
+
+def render_strokes_png(strokes_xy: list[list[list[float]]], output_path: str | Path, size: int = 900) -> None:
+    image = Image.new("RGB", (size, size), (244, 235, 214))
+    draw = ImageDraw.Draw(image)
+    margin = 90
+    scale = min((size - 2 * margin) / 0.46, (size - 2 * margin) / 0.34)
+    cx = size / 2
+    cy = size / 2
+
+    def project(p: list[float]) -> tuple[int, int]:
+        return int(cx + p[0] * scale), int(cy - p[1] * scale)
+
+    for stroke in strokes_xy:
+        if len(stroke) < 2:
+            continue
+        coords = [project(p) for p in stroke]
+        for a, b in zip(coords[:-1], coords[1:]):
+            draw.line([a, b], fill=(34, 28, 20), width=4)
+
+    draw.rectangle([margin - 20, margin - 20, size - margin + 20, size - margin + 20], outline=(190, 164, 122), width=2)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
