@@ -235,6 +235,12 @@ async function handleRealtimeEvent(raw) {
       output_modalities: event.session.output_modalities,
       voice: event.session.audio?.output?.voice,
     } : undefined);
+    if (event.type === "session.created") {
+      assistantTranscript = "";
+      userTranscript = "";
+      renderTranscript();
+      dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+    }
     sendInitialGreeting();
   }
   if (event.type === "input_audio_buffer.committed") {
@@ -327,7 +333,7 @@ function sendInitialGreeting() {
     type: "response.create",
     response: {
       output_modalities: ["audio"],
-      instructions: "Greet the user warmly in English and let them know you are ready to read their fortune.",
+      instructions: "Say a brief, warm hello in English. Do NOT call robot_draw. Just introduce yourself and wait for the user to speak.",
     },
   }));
 }
