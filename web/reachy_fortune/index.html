@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Reachy Fortune Conversation</title>
-    <link rel="stylesheet" href="/static/style.css?v=4" />
+    <link rel="stylesheet" href="/static/style.css?v=5" />
   </head>
   <body>
     <main>
@@ -16,6 +16,13 @@
           <button id="disconnect" disabled>Disconnect</button>
         </div>
         <div class="output-panel">
+          <label class="device-picker">
+            <span>Speaker target</span>
+            <select id="speakerTarget">
+              <option value="computer">Computer</option>
+              <option value="reachy">Reachy Mini</option>
+            </select>
+          </label>
           <label class="device-picker">
             <span>Audio output</span>
             <select id="audioOutput">
@@ -36,6 +43,6 @@
         <p id="interpretation"></p>
       </section>
     </main>
-    <script src="/static/main.js?v=4"></script>
+    <script src="/static/main.js?v=5"></script>
   </body>
 </html>

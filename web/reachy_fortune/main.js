@@ -12,10 +12,12 @@ const transcriptEl = document.querySelector("#transcript");
 const imageEl = document.querySelector("#fortuneImage");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
+const speakerTargetEl = document.querySelector("#speakerTarget");
 const audioOutputEl = document.querySelector("#audioOutput");
 let assistantTranscript = "";
 let userTranscript = "";
 let initialGreetingSent = false;
+let audioOutputs = [];
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -30,6 +32,7 @@ function setStatus(text) {
 connectButton.addEventListener("click", connectRealtime);
 sendTestButton.addEventListener("click", () => sendUserText("请用中文回复：语音测试成功。"));
 disconnectButton.addEventListener("click", disconnectRealtime);
+speakerTargetEl.addEventListener("change", applyAudioOutputDevice);
 audioOutputEl.addEventListener("change", applyAudioOutputDevice);
 refreshAudioOutputDevices();
 
@@ -332,10 +335,10 @@ async function refreshAudioOutputDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
   const selected = audioOutputEl.value;
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const outputs = devices.filter((device) => device.kind === "audiooutput");
+  audioOutputs = devices.filter((device) => device.kind === "audiooutput");
   audioOutputEl.textContent = "";
   audioOutputEl.append(new Option("System default", ""));
-  for (const device of outputs) {
+  for (const device of audioOutputs) {
     const label = device.label || `Speaker ${audioOutputEl.length}`;
     audioOutputEl.append(new Option(label, device.deviceId));
   }
@@ -349,10 +352,37 @@ async function applyAudioOutputDevice() {
   if (typeof remoteAudio.setSinkId !== "function") {
     return;
   }
+  const targetDeviceId = getSelectedAudioOutputDeviceId();
+  if (speakerTargetEl.value === "reachy" && !targetDeviceId) {
+    setStatus("Reachy Mini speaker not found. Use macOS audio output or pair it as an audio device.");
+    log("Reachy Mini speaker not found", {
+      available_outputs: audioOutputs.map((device) => device.label || "(unlabeled output)"),
+    });
+    return;
+  }
   try {
-    await remoteAudio.setSinkId(audioOutputEl.value);
-    log("Audio output selected", { device: audioOutputEl.selectedOptions[0]?.text || "System default" });
+    await remoteAudio.setSinkId(targetDeviceId);
+    log("Audio output selected", {
+      target: speakerTargetEl.value,
+      device: getAudioOutputLabel(targetDeviceId),
+    });
   } catch (error) {
     log("Audio output selection failed", { message: error.message });
   }
+}
+
+function getSelectedAudioOutputDeviceId() {
+  if (speakerTargetEl.value !== "reachy") {
+    return audioOutputEl.value;
+  }
+  const reachyOutput = audioOutputs.find((device) => /reachy|mini/i.test(device.label || ""));
+  return reachyOutput?.deviceId || "";
+}
+
+function getAudioOutputLabel(deviceId) {
+  if (!deviceId) {
+    return "System default";
+  }
+  const output = audioOutputs.find((device) => device.deviceId === deviceId);
+  return output?.label || "Selected speaker";
 }

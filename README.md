@@ -98,6 +98,10 @@ Open `http://127.0.0.1:8787`, click `Connect voice`, then ask:
 你能给我分析今天的运势吗？
 ```
 
+To speak through Reachy Mini while keeping microphone input on the computer,
+pair Reachy Mini as a system audio output device and choose `Reachy Mini` in
+the UI's `Speaker target` control.
+
 When the model calls `robot_draw`, the backend generates:
 
 - a robot-parseable XY trajectory in `outputs/reachy_fortune/latest_fortune_toolpath.json`
