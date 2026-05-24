@@ -5,6 +5,7 @@ const handledToolCalls = new Set();
 const connectButton = document.querySelector("#connect");
 const disconnectButton = document.querySelector("#disconnect");
 const fortuneButton = document.querySelector("#fortune");
+const playAudioButton = document.querySelector("#playAudio");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
 const imageEl = document.querySelector("#fortuneImage");
@@ -25,6 +26,7 @@ function setStatus(text) {
 
 connectButton.addEventListener("click", connectRealtime);
 disconnectButton.addEventListener("click", disconnectRealtime);
+playAudioButton.addEventListener("click", () => ensureRemoteAudioPlaying("manual"));
 fortuneButton.addEventListener("click", () => {
   sendUserText("你能给我分析今天的运势，并画一张道教大师用毛笔写出来的运势图吗？");
 });
@@ -37,6 +39,14 @@ async function connectRealtime() {
   pc = new RTCPeerConnection();
   pc.ontrack = (event) => {
     remoteAudio.srcObject = event.streams[0];
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1;
+    log("Remote audio track received", {
+      streams: event.streams.length,
+      track_kind: event.track.kind,
+      track_state: event.track.readyState,
+    });
+    ensureRemoteAudioPlaying("ontrack");
   };
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -55,6 +65,7 @@ async function connectRealtime() {
         instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
       },
     }));
+    ensureRemoteAudioPlaying("connected");
   });
   dc.addEventListener("message", handleRealtimeEvent);
 
@@ -69,6 +80,27 @@ async function connectRealtime() {
     throw new Error(await response.text());
   }
   await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
+}
+
+async function ensureRemoteAudioPlaying(source) {
+  if (!remoteAudio.srcObject) {
+    log("Remote audio is not ready yet", { source });
+    return;
+  }
+  try {
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1;
+    await remoteAudio.play();
+    log("Remote audio playback started", {
+      source,
+      paused: remoteAudio.paused,
+      muted: remoteAudio.muted,
+      volume: remoteAudio.volume,
+    });
+  } catch (error) {
+    setStatus("Audio is blocked. Click Play audio.");
+    log("Remote audio playback blocked", { source, message: error.message });
+  }
 }
 
 function disconnectRealtime() {

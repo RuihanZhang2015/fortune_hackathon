@@ -13,6 +13,7 @@
         <div class="controls">
           <button id="connect">Connect voice</button>
           <button id="fortune">Ask fortune</button>
+          <button id="playAudio">Play audio</button>
           <button id="disconnect" disabled>Disconnect</button>
         </div>
         <div class="output-panel">
@@ -28,7 +29,7 @@
           </label>
         </div>
         <p id="status">Idle</p>
-        <audio id="remoteAudio" autoplay></audio>
+        <audio id="remoteAudio" autoplay playsinline controls></audio>
         <pre id="log"></pre>
       </section>
       <section class="right">
