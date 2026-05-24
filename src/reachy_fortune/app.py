@@ -51,7 +51,7 @@ TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-trans
 VAD_THRESHOLD = float(os.getenv("OPENAI_VAD_THRESHOLD", "0.75"))
 VAD_PREFIX_PADDING_MS = int(os.getenv("OPENAI_VAD_PREFIX_PADDING_MS", "300"))
 VAD_SILENCE_DURATION_MS = int(os.getenv("OPENAI_VAD_SILENCE_DURATION_MS", "900"))
-VAD_CREATE_RESPONSE = os.getenv("OPENAI_VAD_CREATE_RESPONSE", "true").lower() == "true"
+VAD_CREATE_RESPONSE = os.getenv("OPENAI_VAD_CREATE_RESPONSE", "false").lower() == "true"
 VAD_INTERRUPT_RESPONSE = os.getenv("OPENAI_VAD_INTERRUPT_RESPONSE", "false").lower() == "true"
 NOISE_REDUCTION = os.getenv("OPENAI_NOISE_REDUCTION", "far_field")
 ARM_NGROK_URL = os.getenv("ARM_NGROK_URL", "").strip()
@@ -181,18 +181,14 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     mapped_payload = _mapped_coordinates_payload(payload)
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     mapped_json_path.write_text(json.dumps(mapped_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    publish_result = _publish_to_arm_ngrok(mapped_payload)
     render_toolpath_png(payload, image_path)
+    publish_result = _publish_to_arm_ngrok(mapped_payload)
+
     logger.info(
-        "robot_draw generated title=%r point_count=%s frame=%s json_path=%s mapped_json_path=%s image_path=%s first_points=%s last_points=%s",
+        "robot_draw generated title=%r point_count=%s image_path=%s",
         payload["title"],
         len(points_xy),
-        payload["robot_draw_tool_call"]["coordinate_frame"],
-        json_path,
-        mapped_json_path,
         image_path,
-        points_xy[:5],
-        points_xy[-5:],
     )
 
     if request.reachy_output:
@@ -312,25 +308,26 @@ def _instructions() -> str:
     return """
 你是 Reachy Mini 上的玄妙小道童助手。用中文自然对话，语气温和、略带神秘，但不要吓人。
 
-当用户请求运势图时，必须调用 robot_draw，生成一条一笔画路径（不抬笔）。
+当用户请求运势图时，调用 robot_draw，从下面六个图案中选一个来画，必须画得认得出，绝不画抽象符号。
 
 【坐标系】单位：米，纸张中心为原点。x in [-0.20, 0.20]，y in [-0.15, 0.15]，保留两位小数。
 
 【一笔画规则】
-- strokes 里只放一条笔划（[[x,y],[x,y],...]），整张图一笔连续画完
-- 50~90 个点，路径覆盖画布大部分区域，线条可以交叉回返
-- 圆弧近似：半径 r 圆心 (cx,cy) 的 12 点圆：
-  [cx+r,cy]->[cx+0.87r,cy+0.5r]->[cx+0.5r,cy+0.87r]->[cx,cy+r]->
-  [cx-0.5r,cy+0.87r]->[cx-0.87r,cy+0.5r]->[cx-r,cy]->
-  [cx-0.87r,cy-0.5r]->[cx-0.5r,cy-0.87r]->[cx,cy-r]->
-  [cx+0.5r,cy-0.87r]->[cx+0.87r,cy-0.5r]->[cx+r,cy]
+- strokes 里只放一条笔划，一笔连续画完整个图案，不抬笔
+- 60~100 个点，图案要大，撑满画布大部分空间
+- 圆弧近似（半径 r，圆心 cx,cy，12 点）：
+  [cx+r,cy],[cx+0.87r,cy+0.5r],[cx+0.5r,cy+0.87r],[cx,cy+r],
+  [cx-0.5r,cy+0.87r],[cx-0.87r,cy+0.5r],[cx-r,cy],
+  [cx-0.87r,cy-0.5r],[cx-0.5r,cy-0.87r],[cx,cy-r],
+  [cx+0.5r,cy-0.87r],[cx+0.87r,cy-0.5r],[cx+r,cy]
 
-【根据运势选图案】
-- 运势旺盛/宜行动 -> 旭日：画圆（r=0.06）再从圆边出发画 8 条放射线（长 0.04），每条之间用弧线连回圆上
-- 宜静思/等待 -> 月牙：大弧（r=0.09，画 2/3 圆）+ 折返小弧（r=0.06，偏移 0.03）
-- 有新机遇/成长 -> 竹节：从 [0,-0.13] 开始折线向上画三节竹（每节高 0.08，左右摆幅 0.04，每节顶加横线）
-- 情绪起伏/变化 -> 鱼：椭圆身体（长轴 0.12 短轴 0.07）+ 鱼尾两分叉 + 小圆眼，一笔连续
-- 踏实/稳重 -> 山形：从 [-0.18,-0.10] 出发画三座山峰轮廓（峰顶 y=0.10），底部连线返回
+【必须从这六个中选一个，根据运势判断哪个最合适】
+- 太阳：16个交替点形成太阳齿轮轮廓，外圈点r=0.13，内圈点r=0.07，每22.5°交替一个点（共16点），从[0.13,0]出发，依次[0.07×cos22.5°,0.07×sin22.5°],[0.13×cos45°,0.13×sin45°]...，最后连回[0.13,0]，形成八角太阳
+- 太极：外大圆（r=0.11，圆心[0,0]，顺时针12点从[0,0.11]开始）→ 沿右半大圆弧到[0,-0.11] → 下小圆（r=0.055，圆心[0,-0.055]，顺时针6点）→ 沿左半大圆弧到[0,0.11] → 上小圆（r=0.055，圆心[0,0.055]，逆时针6点），一笔画出太极轮廓
+- 花：从圆心[0,0]出发，画6片花瓣，每片从[0,0]出发到花瓣顶端（依次方向0°,60°,120°,180°,240°,300°，每瓣长0.12），顶端做小圆弧（r=0.03）再回[0,0]，六片连续
+- 风车：从圆心[0,0]出发，画4片叶片，每片从圆心延伸后弯折：右叶[0,0]→[0.13,0.04]→[0.04,0.13]→[0,0]；上叶[0,0]→[-0.04,0.13]→[-0.13,0.04]→[0,0]；左叶[0,0]→[-0.13,-0.04]→[-0.04,-0.13]→[0,0]；下叶[0,0]→[0.04,-0.13]→[0.13,-0.04]→[0,0]，四片连续
+- 伞：从[0,-0.14]（伞柄底）向上到[0,-0.06]（伞柄顶），展开圆弧（圆心[0,-0.06]，r=0.14，从180°到0°经过顶点[0,0.08]），再从圆弧均匀位置画6条伞骨直线到伞柄[0,-0.06]（每骨出去再折回），最后伞柄弯钩[-0.03,-0.12]
+- 云：从[-0.16,0]出发，连续三个上凸圆弧：左泡（圆心[-0.09,0]，r=0.08，从180°逆时针到0°），中泡（圆心[0,0.04]，r=0.09，从200°逆时针到340°），右泡（圆心[0.09,0]，r=0.08，从180°顺时针到0°），底部直线连回[-0.16,0]
 
 工具返回后，用 interpretation 作主要回复，说得抽象诗意。不要念坐标。平时聊天简短回应。
 """.strip()
@@ -363,14 +360,17 @@ def _robot_draw_tool() -> dict[str, Any]:
                 "strokes": {
                     "type": "array",
                     "description": (
-                        "List of pen strokes. Each stroke is [[x,y],[x,y],...] in meters. "
-                        "Canvas: x∈[-0.20,0.20], y∈[-0.15,0.15], origin at center. "
-                        "Use 3-5 strokes, total points < 120. "
-                        "Circle (radius r, center cx,cy, 12 pts): "
-                        "[[cx+r,cy],[cx+0.87r,cy+0.5r],[cx+0.5r,cy+0.87r],[cx,cy+r],"
+                        "Exactly 1 stroke: a single continuous one-brush path [[x,y],...] "
+                        "in meters, 60-100 points, no pen lift, filling most of the canvas. "
+                        "Canvas: x in [-0.20,0.20], y in [-0.15,0.15], origin at center. "
+                        "Must draw exactly one recognizable figure chosen from: "
+                        "sun (太阳), taiji (太极), flower (花), pinwheel (风车), umbrella (伞), cloud (云). "
+                        "No abstract patterns. Follow the coordinate instructions in the system prompt exactly. "
+                        "Circle (r, cx, cy, 12 pts): "
+                        "[cx+r,cy],[cx+0.87r,cy+0.5r],[cx+0.5r,cy+0.87r],[cx,cy+r],"
                         "[cx-0.5r,cy+0.87r],[cx-0.87r,cy+0.5r],[cx-r,cy],"
                         "[cx-0.87r,cy-0.5r],[cx-0.5r,cy-0.87r],[cx,cy-r],"
-                        "[cx+0.5r,cy-0.87r],[cx+0.87r,cy-0.5r],[cx+r,cy]]"
+                        "[cx+0.5r,cy-0.87r],[cx+0.87r,cy-0.5r],[cx+r,cy]"
                     ),
                     "items": {
                         "type": "array",

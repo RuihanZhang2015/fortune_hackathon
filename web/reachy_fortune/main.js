@@ -6,6 +6,7 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAAC
 
 const connectButton = document.querySelector("#connect");
 const sendTestButton = document.querySelector("#sendTest");
+const muteMicButton = document.querySelector("#mutemic");
 const disconnectButton = document.querySelector("#disconnect");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
@@ -19,6 +20,10 @@ let assistantTranscript = "";
 let userTranscript = "";
 let initialGreetingSent = false;
 let audioOutputs = [];
+let isResponseActive = false;
+let pendingUserResponse = false;
+let micMuted = false;
+let micTrack = null;
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -32,6 +37,7 @@ function setStatus(text) {
 
 connectButton.addEventListener("click", connectRealtime);
 sendTestButton.addEventListener("click", () => sendUserText("请用中文回复：语音测试成功。"));
+muteMicButton.addEventListener("click", toggleMicMute);
 disconnectButton.addEventListener("click", disconnectRealtime);
 speakerTargetEl.addEventListener("change", applyAudioOutputDevice);
 audioOutputEl.addEventListener("change", applyAudioOutputDevice);
@@ -51,6 +57,8 @@ async function startRealtimeConnection() {
   setStatus("Requesting microphone...");
   await unlockAudioPlayback();
   initialGreetingSent = false;
+  isResponseActive = false;
+  pendingUserResponse = false;
   pc = new RTCPeerConnection();
   pc.addEventListener("connectionstatechange", () => {
     log("Peer connection state", {
@@ -72,7 +80,8 @@ async function startRealtimeConnection() {
   };
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  pc.addTrack(stream.getAudioTracks()[0]);
+  micTrack = stream.getAudioTracks()[0];
+  pc.addTrack(micTrack);
   await refreshAudioOutputDevices();
   await applyAudioOutputDevice();
 
@@ -81,6 +90,7 @@ async function startRealtimeConnection() {
     setStatus("Connected. Warming up Reachy...");
     connectButton.disabled = true;
     sendTestButton.disabled = false;
+    muteMicButton.disabled = false;
     disconnectButton.disabled = false;
     ensureRemoteAudioPlaying("connected");
   });
@@ -167,10 +177,28 @@ function disconnectRealtime() {
   }
   pc = null;
   dc = null;
+  micTrack = null;
+  isResponseActive = false;
+  pendingUserResponse = false;
+  if (micMuted) {
+    micMuted = false;
+    muteMicButton.textContent = "Mute mic";
+    muteMicButton.classList.remove("muted");
+  }
   connectButton.disabled = false;
   sendTestButton.disabled = true;
+  muteMicButton.disabled = true;
   disconnectButton.disabled = true;
   setStatus("Disconnected");
+}
+
+function toggleMicMute() {
+  if (!micTrack) return;
+  micMuted = !micMuted;
+  micTrack.enabled = !micMuted;
+  muteMicButton.textContent = micMuted ? "Unmute mic" : "Mute mic";
+  muteMicButton.classList.toggle("muted", micMuted);
+  log(micMuted ? "Microphone muted — output only mode" : "Microphone unmuted");
 }
 
 function sendUserText(text) {
@@ -209,7 +237,19 @@ async function handleRealtimeEvent(raw) {
     } : undefined);
     sendInitialGreeting();
   }
+  if (event.type === "input_audio_buffer.committed") {
+    if (micMuted) {
+      log("VAD committed — mic muted, ignoring");
+    } else if (isResponseActive) {
+      log("VAD committed — response active, queuing for after current response");
+      pendingUserResponse = true;
+    } else {
+      log("VAD committed — sending response.create");
+      dc.send(JSON.stringify({ type: "response.create", response: { output_modalities: ["audio"] } }));
+    }
+  }
   if (event.type === "response.created") {
+    isResponseActive = true;
     setStatus("Reachy is responding...");
   }
   if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
@@ -238,9 +278,6 @@ async function handleRealtimeEvent(raw) {
     pending.name = event.item.name || pending.name;
     pending.arguments = event.item.arguments || pending.arguments;
     pendingToolCalls.set(event.item.call_id, pending);
-    if (event.type === "response.output_item.done" && pending.name === "robot_draw") {
-      await handleRobotDrawCall(pending);
-    }
   }
   if (event.type === "response.function_call_arguments.delta" && event.call_id) {
     const pending = pendingToolCalls.get(event.call_id) || { call_id: event.call_id, name: event.name, arguments: "" };
@@ -249,13 +286,10 @@ async function handleRealtimeEvent(raw) {
     pendingToolCalls.set(event.call_id, pending);
   }
   if (event.type === "response.function_call_arguments.done") {
-    const item = {
-      call_id: event.call_id,
-      name: event.name || pendingToolCalls.get(event.call_id)?.name,
-      arguments: event.arguments || pendingToolCalls.get(event.call_id)?.arguments || "{}",
-    };
-    if (item.name === "robot_draw") {
-      await handleRobotDrawCall(item);
+    const pending = pendingToolCalls.get(event.call_id);
+    if (pending) {
+      pending.arguments = event.arguments || pending.arguments;
+      pendingToolCalls.set(event.call_id, pending);
     }
   }
   if (event.type === "conversation.item.input_audio_transcription.delta") {
@@ -268,11 +302,18 @@ async function handleRealtimeEvent(raw) {
     log(`You transcript: ${userTranscript}`);
   }
   if (event.type === "response.done") {
+    isResponseActive = false;
     setStatus("Connected. Speak to Reachy.");
     captureTranscriptFromResponse(event.response);
     const calls = event.response?.output?.filter((x) => x.type === "function_call" && x.name === "robot_draw") || [];
+    log(`response.done — output items: ${event.response?.output?.length ?? 0}, robot_draw calls: ${calls.length}`);
     for (const item of calls) {
       await handleRobotDrawCall(item);
+    }
+    if (calls.length === 0 && pendingUserResponse) {
+      pendingUserResponse = false;
+      log("Sending queued response.create for pending user speech");
+      dc.send(JSON.stringify({ type: "response.create", response: { output_modalities: ["audio"] } }));
     }
   }
 }
@@ -321,13 +362,23 @@ async function handleRobotDrawCall(item) {
   } catch {
     args = {};
   }
-  log("Tool call: robot_draw", {
-    call_id: item.call_id,
-    arguments: args,
-  });
+  log("Tool call: robot_draw", { call_id: item.call_id, title: args.title, reading: args.reading });
   setStatus("Drawing fortune...");
 
-  let result;
+  // Immediately close the tool call and trigger voice response — don't wait for the backend.
+  // OpenAI already generated interpretation in the tool call args.
+  sendFunctionCallOutput(item.call_id, {
+    ok: true,
+    title: args.title || "fortune",
+    interpretation: args.interpretation || "",
+  });
+  requestToolResultResponse(
+    "机器人正在画图，你继续用中文讲解，持续约一分钟，语气神秘诗意，娓娓道来，不要问用户问题，不要停顿等待。" +
+    "内容：先朗读 interpretation 的内容，再展开讲今日运势的深层含义、图案象征的寓意、" +
+    "对用户今天行动的具体建议，最后以吉祥祝福收尾。不要念坐标，不要说 JSON。"
+  );
+
+  // Backend fetch runs in parallel: renders image and publishes to ngrok.
   try {
     const response = await fetch("/api/robot_draw", {
       method: "POST",
@@ -342,35 +393,24 @@ async function handleRobotDrawCall(item) {
         interpretation: args.interpretation || null,
       }),
     });
-    result = await response.json();
+    const result = await response.json();
     if (!response.ok || result.ok === false) {
       throw new Error(result.detail || result.error || `robot_draw failed with HTTP ${response.status}`);
     }
+    if (result.image_url) {
+      imageEl.src = `${result.image_url}?t=${Date.now()}`;
+    }
+    interpretationEl.textContent = result.interpretation || args.interpretation || "";
+    setStatus("Fortune drawing ready.");
+    log("Backend result", {
+      ...compactRobotDrawResult(result),
+      tool_call: compactRobotDrawToolCall(result.tool_call),
+    });
   } catch (error) {
     const message = formatError(error);
-    setStatus(`robot_draw failed: ${message}`);
-    log("Tool error", { message });
-    sendFunctionCallOutput(item.call_id, {
-      ok: false,
-      error: message,
-      interpretation: "玄运图暂时没有画成，请温柔地告诉用户稍后再试。",
-    });
-    requestToolResultResponse("请用中文简短说明绘图暂时失败，请用户稍后再试。");
-    return;
+    setStatus(`robot_draw backend failed: ${message}`);
+    log("Backend error", { message });
   }
-
-  if (result.image_url) {
-    imageEl.src = `${result.image_url}?t=${Date.now()}`;
-  }
-  interpretationEl.textContent = result.interpretation || "";
-  setStatus("Fortune drawing ready.");
-  log("Tool result", {
-    ...compactRobotDrawResult(result),
-    tool_call: compactRobotDrawToolCall(result.tool_call),
-  });
-
-  sendFunctionCallOutput(item.call_id, compactRobotDrawResult(result));
-  requestToolResultResponse("请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。");
 }
 
 function sendFunctionCallOutput(callId, output) {

@@ -78,6 +78,12 @@ button:disabled {
   cursor: default;
 }
 
+button.muted {
+  background: #6b1a1a;
+  border-color: #c0392b;
+  color: #ffd5d5;
+}
+
 #status {
   min-height: 22px;
 }
