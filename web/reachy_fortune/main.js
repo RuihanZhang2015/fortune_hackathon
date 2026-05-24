@@ -406,6 +406,7 @@ function compactRobotDrawResult(result) {
     image_url: result.image_url,
     toolpath_url: result.toolpath_url,
     point_count: result.point_count,
+    drawing_seed: result.drawing_seed,
     reachy_output: result.reachy_output,
     reachy_mode: result.reachy_mode,
   };

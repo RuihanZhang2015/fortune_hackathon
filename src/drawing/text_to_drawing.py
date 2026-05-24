@@ -31,16 +31,18 @@ class DrawingPlan:
     strokes: list[Stroke]
 
 
-def plan_from_text(prompt: str, today: date | None = None) -> DrawingPlan:
+def plan_from_text(prompt: str, today: date | None = None, seed_text: str | None = None) -> DrawingPlan:
     """Turn natural language into a deterministic drawing plan.
 
     This is intentionally local and hackathon-friendly: no API key is needed.
-    The same prompt on the same date produces the same picture.
+    By default the same prompt on the same date produces the same picture.
+    Pass `seed_text` when a caller wants per-request visual variation.
     """
     current_day = today or date.today()
     text = prompt.strip()
     lower = text.lower()
-    seed = _stable_seed(f"{current_day.isoformat()}:{text}")
+    seed_source = seed_text if seed_text is not None else text
+    seed = _stable_seed(f"{current_day.isoformat()}:{seed_source}")
     score = seed % 100
 
     if _has_any(lower, ["fortune", "运势", "星座", "占卜", "好运", "today"]):
@@ -71,9 +73,10 @@ def toolpath_payload_from_text(
     travel_z: float = 0.09,
     spacing: float = 0.005,
     today: date | None = None,
+    seed_text: str | None = None,
 ) -> dict:
     """Compile natural language into a robot-parseable trajectory payload."""
-    plan = plan_from_text(prompt, today=today)
+    plan = plan_from_text(prompt, today=today, seed_text=seed_text)
     strokes = [stroke.with_lift(draw_z=draw_z, travel_z=travel_z) for stroke in plan.strokes]
     path = _interpolate_strokes(strokes, spacing=spacing)
     return {
@@ -109,6 +112,7 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
     opportunity = 45 + ((score * 7) % 51)
     emotion = 40 + ((score * 11) % 56)
     caution = 25 + ((score * 5) % 46)
+    variant = score % 4
 
     taiji_radius = 0.052 + 0.00022 * (energy - 55)
     seal_size = 0.042 + 0.00018 * opportunity
@@ -116,15 +120,40 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
     caution_radius = 0.015 + 0.00018 * caution
 
     strokes = [
-        *_taiji_mark(center=(-0.125, 0.058), radius=taiji_radius),
-        *_trigram_mark(origin=(0.075, 0.108), width=0.105, gap=0.022, broken=score % 2 == 0),
-        *_talisman_mark(center=(0.02, 0.012), height=0.15, width=seal_size),
-        wave_points(start=(-0.185, -0.105), width=0.37, amplitude=wave_amp, cycles=2.8),
-        arc_points(center=(-0.02, -0.064), radius=0.085, start_angle=3.55, end_angle=5.85),
-        circle_points(center=(0.165, -0.072), radius=caution_radius, samples=48),
-        polyline_points([(0.165, -0.099), (0.165, -0.052)]),
-        star_points(center=(0.145, 0.025), outer_radius=0.023, tips=4),
+        *_taiji_mark(center=_variant_point(variant, "taiji"), radius=taiji_radius),
+        *_trigram_mark(
+            origin=_variant_point(variant, "trigram"),
+            width=0.09 + 0.00045 * opportunity,
+            gap=0.019 + 0.00006 * caution,
+            broken=score % 2 == 0,
+        ),
+        *_talisman_mark(
+            center=_variant_point(variant, "talisman"),
+            height=0.128 + 0.00042 * energy,
+            width=seal_size,
+        ),
+        wave_points(
+            start=_variant_point(variant, "wave"),
+            width=0.32 + 0.0007 * opportunity,
+            amplitude=wave_amp,
+            cycles=2.1 + 0.18 * variant,
+        ),
+        arc_points(
+            center=_variant_point(variant, "arc"),
+            radius=0.067 + 0.00045 * emotion,
+            start_angle=3.1 + 0.16 * variant,
+            end_angle=5.35 + 0.13 * variant,
+        ),
+        circle_points(center=_variant_point(variant, "caution"), radius=caution_radius, samples=48),
+        polyline_points(_variant_caution_line(variant)),
+        star_points(
+            center=_variant_point(variant, "star"),
+            outer_radius=0.019 + 0.0001 * energy,
+            tips=4 + (score % 2),
+            rotation=math.pi / 4.0 + 0.12 * variant,
+        ),
     ]
+    strokes.extend(_variant_extra_marks(variant, score))
     level = "偏旺" if score >= 67 else "平稳上升" if score >= 34 else "温和蓄力"
     best_window = "日光初明时" if opportunity >= 72 else "午后气缓时" if emotion >= 70 else "暮色未沉时"
     action = "定心而后言，择一事轻轻推开" if opportunity >= 70 else "收束杂念，守住一线清明"
@@ -137,7 +166,8 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
         "这张玄运图不逐项报数，而看气势。左侧太极印为底盘，阴阳相抱，表示今日宜先安内，"
         "再向外行事；右上三爻卦为机缘门，线有连断，说明机会不是直落掌心，而要顺着缝隙进入；"
         "中央符箓为行动轴，竖线定心，折笔开路，像一道先收后放的符令；"
-        "底部云气为心潮，提醒言语和决定都不宜太急；右下朱砂印为避忌，"
+        f"第{variant + 1}式变图把这些符号重新排布，说明同一运势也会因入局角度不同而显出不同纹路；"
+        "底部云气为心潮，提醒言语和决定都不宜太急；朱砂印为避忌，"
         f"{caution_text}。若要取用此图，可在{best_window}行一件小而明确的事：{action}。"
     )
     symbols = [
@@ -147,6 +177,7 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
         {"name": "cloud_wave", "meaning": "emotional current"},
         {"name": "cinnabar_caution_dot", "meaning": caution_text},
         {"name": "guiding_star", "meaning": "a small guiding sign"},
+        {"name": f"fortune_variant_{variant + 1}", "meaning": "per-request symbolic layout"},
     ]
     return DrawingPlan(
         title="today_fortune",
@@ -230,6 +261,74 @@ def _talisman_mark(center: tuple[float, float], height: float, width: float) -> 
         polyline_points([(x - width * 0.65, y + 0.005), (x + width * 0.65, y - 0.015)]),
         polyline_points([(x + width * 0.45, y + 0.03), (x - width * 0.2, y - 0.04), (x + width * 0.55, y - 0.075)]),
         polyline_points([(x - width * 0.8, bottom + 0.018), (x, bottom), (x + width * 0.8, bottom + 0.018)]),
+    ]
+
+
+def _variant_point(variant: int, name: str) -> tuple[float, float]:
+    layouts = [
+        {
+            "taiji": (-0.125, 0.058),
+            "trigram": (0.075, 0.108),
+            "talisman": (0.02, 0.012),
+            "wave": (-0.185, -0.105),
+            "arc": (-0.02, -0.064),
+            "caution": (0.165, -0.072),
+            "star": (0.145, 0.025),
+        },
+        {
+            "taiji": (0.122, 0.052),
+            "trigram": (-0.18, 0.11),
+            "talisman": (-0.015, 0.006),
+            "wave": (-0.17, -0.112),
+            "arc": (0.035, -0.058),
+            "caution": (-0.155, -0.064),
+            "star": (0.155, -0.004),
+        },
+        {
+            "taiji": (-0.05, 0.082),
+            "trigram": (0.083, 0.01),
+            "talisman": (-0.108, -0.018),
+            "wave": (-0.178, -0.118),
+            "arc": (0.078, -0.076),
+            "caution": (0.158, 0.076),
+            "star": (-0.168, 0.008),
+        },
+        {
+            "taiji": (0.07, -0.02),
+            "trigram": (-0.178, 0.086),
+            "talisman": (0.108, 0.036),
+            "wave": (-0.178, -0.096),
+            "arc": (-0.082, -0.066),
+            "caution": (0.166, -0.102),
+            "star": (-0.018, 0.118),
+        },
+    ]
+    return layouts[variant % len(layouts)][name]
+
+
+def _variant_caution_line(variant: int) -> list[tuple[float, float]]:
+    x, y = _variant_point(variant, "caution")
+    if variant % 2 == 0:
+        return [(x, y - 0.027), (x, y + 0.02)]
+    return [(x - 0.023, y), (x + 0.023, y)]
+
+
+def _variant_extra_marks(variant: int, score: int) -> list[Stroke]:
+    if variant == 0:
+        return _sun_rays(center=(0.0, 0.12), radius=0.018 + 0.00008 * score)
+    if variant == 1:
+        return [
+            circle_points(center=(-0.012, 0.112), radius=0.025, samples=44),
+            arc_points(center=(-0.004, 0.116), radius=0.024, start_angle=1.55, end_angle=4.7, samples=30),
+        ]
+    if variant == 2:
+        return [
+            triangle_points(center=(0.02, 0.118), side=0.052, rotation=math.pi / 2.0),
+            polyline_points([(-0.006, 0.108), (0.02, 0.138), (0.046, 0.108)]),
+        ]
+    return [
+        wave_points(start=(-0.036, 0.124), width=0.082, amplitude=0.008, cycles=1.3, samples=36),
+        polyline_points([(-0.042, 0.1), (0.0, 0.137), (0.044, 0.1)]),
     ]
 
 

@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -61,6 +62,7 @@ class RobotDrawRequest(BaseModel):
     prompt: str = "给我分析今天的运势"
     style: str = "道教符箓、毛笔、玄妙、抽象"
     reachy_output: bool = True
+    drawing_seed: str | None = None
 
 
 class SayRequest(BaseModel):
@@ -128,14 +130,17 @@ async def create_realtime_session(request: Request) -> str:
 
 @app.post("/api/robot_draw")
 def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
+    drawing_seed = request.drawing_seed or uuid4().hex
     logger.info(
-        "robot_draw requested prompt=%r style=%r reachy_output=%s",
+        "robot_draw requested prompt=%r style=%r reachy_output=%s drawing_seed=%s",
         request.prompt,
         request.style,
         request.reachy_output,
+        drawing_seed,
     )
     prompt = f"{request.prompt}。风格：{request.style}"
-    payload = toolpath_payload_from_text(prompt)
+    payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
+    payload["drawing_seed"] = drawing_seed
     points_xy = [[float(x), float(y)] for x, y, z in payload["points"] if z <= payload["draw_z"] + 1e-6]
     payload["robot_draw_tool_call"] = {
         "type": "robot_draw",
@@ -169,6 +174,7 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         "toolpath_url": "/api/latest_toolpath.json",
         "tool_call": payload["robot_draw_tool_call"],
         "point_count": len(points_xy),
+        "drawing_seed": drawing_seed,
         "reachy_output": request.reachy_output,
         "reachy_mode": reachy.mode,
     }
