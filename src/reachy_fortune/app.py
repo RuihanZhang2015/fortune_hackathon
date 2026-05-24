@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 STATIC_DIR = ROOT / "web" / "reachy_fortune"
 OUTPUT_DIR = ROOT / "outputs" / "reachy_fortune"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+logger = logging.getLogger("reachy_fortune.robot_draw")
 
 
 def _load_dotenv(path: Path) -> None:
@@ -126,6 +128,12 @@ async def create_realtime_session(request: Request) -> str:
 
 @app.post("/api/robot_draw")
 def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
+    logger.info(
+        "robot_draw requested prompt=%r style=%r reachy_output=%s",
+        request.prompt,
+        request.style,
+        request.reachy_output,
+    )
     prompt = f"{request.prompt}。风格：{request.style}"
     payload = toolpath_payload_from_text(prompt)
     points_xy = [[float(x), float(y)] for x, y, z in payload["points"] if z <= payload["draw_z"] + 1e-6]
@@ -139,6 +147,16 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     image_path = OUTPUT_DIR / "latest_fortune.png"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     render_toolpath_png(payload, image_path)
+    logger.info(
+        "robot_draw generated title=%r point_count=%s frame=%s json_path=%s image_path=%s first_points=%s last_points=%s",
+        payload["title"],
+        len(points_xy),
+        payload["robot_draw_tool_call"]["coordinate_frame"],
+        json_path,
+        image_path,
+        points_xy[:5],
+        points_xy[-5:],
+    )
 
     if request.reachy_output:
         reachy.express("mystical")

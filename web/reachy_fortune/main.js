@@ -1,6 +1,7 @@
 let pc;
 let dc;
 const handledToolCalls = new Set();
+const pendingToolCalls = new Map();
 const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
 
 const connectButton = document.querySelector("#connect");
@@ -232,6 +233,31 @@ async function handleRealtimeEvent(raw) {
     setStatus("Reachy replied.");
     log(`Reachy text: ${event.text}`);
   }
+  if ((event.type === "response.output_item.added" || event.type === "response.output_item.done") && event.item?.type === "function_call") {
+    const pending = pendingToolCalls.get(event.item.call_id) || { call_id: event.item.call_id, arguments: "" };
+    pending.name = event.item.name || pending.name;
+    pending.arguments = event.item.arguments || pending.arguments;
+    pendingToolCalls.set(event.item.call_id, pending);
+    if (event.type === "response.output_item.done" && pending.name === "robot_draw") {
+      await handleRobotDrawCall(pending);
+    }
+  }
+  if (event.type === "response.function_call_arguments.delta" && event.call_id) {
+    const pending = pendingToolCalls.get(event.call_id) || { call_id: event.call_id, name: event.name, arguments: "" };
+    pending.name = event.name || pending.name;
+    pending.arguments += event.delta || "";
+    pendingToolCalls.set(event.call_id, pending);
+  }
+  if (event.type === "response.function_call_arguments.done") {
+    const item = {
+      call_id: event.call_id,
+      name: event.name || pendingToolCalls.get(event.call_id)?.name,
+      arguments: event.arguments || pendingToolCalls.get(event.call_id)?.arguments || "{}",
+    };
+    if (item.name === "robot_draw") {
+      await handleRobotDrawCall(item);
+    }
+  }
   if (event.type === "conversation.item.input_audio_transcription.delta") {
     userTranscript += event.delta || "";
     renderTranscript();
@@ -286,49 +312,117 @@ function renderTranscript() {
 }
 
 async function handleRobotDrawCall(item) {
-  if (handledToolCalls.has(item.call_id)) return;
+  if (!item.call_id || handledToolCalls.has(item.call_id)) return;
   handledToolCalls.add(item.call_id);
+  pendingToolCalls.delete(item.call_id);
   let args = {};
   try {
     args = JSON.parse(item.arguments || "{}");
   } catch {
     args = {};
   }
-  log("Tool call: robot_draw", args);
-  const result = await fetch("/api/robot_draw", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: args.prompt || "给我分析今天的运势",
-      style: args.style || "道教符箓、毛笔、玄妙、抽象",
-      reachy_output: true,
-    }),
-  }).then((r) => r.json());
+  log("Tool call: robot_draw", {
+    call_id: item.call_id,
+    arguments: args,
+  });
+  setStatus("Drawing fortune...");
 
-  imageEl.src = `${result.image_url}?t=${Date.now()}`;
-  interpretationEl.textContent = result.interpretation;
+  let result;
+  try {
+    const response = await fetch("/api/robot_draw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: args.prompt || "给我分析今天的运势",
+        style: args.style || "道教符箓、毛笔、玄妙、抽象",
+        reachy_output: true,
+      }),
+    });
+    result = await response.json();
+    if (!response.ok || result.ok === false) {
+      throw new Error(result.detail || result.error || `robot_draw failed with HTTP ${response.status}`);
+    }
+  } catch (error) {
+    const message = formatError(error);
+    setStatus(`robot_draw failed: ${message}`);
+    log("Tool error", { message });
+    sendFunctionCallOutput(item.call_id, {
+      ok: false,
+      error: message,
+      interpretation: "玄运图暂时没有画成，请温柔地告诉用户稍后再试。",
+    });
+    requestToolResultResponse("请用中文简短说明绘图暂时失败，请用户稍后再试。");
+    return;
+  }
+
+  if (result.image_url) {
+    imageEl.src = `${result.image_url}?t=${Date.now()}`;
+  }
+  interpretationEl.textContent = result.interpretation || "";
+  setStatus("Fortune drawing ready.");
   log("Tool result", {
-    point_count: result.point_count,
-    image_url: result.image_url,
-    reachy_output: result.reachy_output,
-    reachy_mode: result.reachy_mode,
+    ...compactRobotDrawResult(result),
+    tool_call: compactRobotDrawToolCall(result.tool_call),
   });
 
+  sendFunctionCallOutput(item.call_id, compactRobotDrawResult(result));
+  requestToolResultResponse("请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。");
+}
+
+function sendFunctionCallOutput(callId, output) {
+  if (!dc || dc.readyState !== "open") {
+    log("Cannot send tool output: data channel is closed.", { call_id: callId });
+    return;
+  }
   dc.send(JSON.stringify({
     type: "conversation.item.create",
     item: {
       type: "function_call_output",
-      call_id: item.call_id,
-      output: JSON.stringify(result),
+      call_id: callId,
+      output: JSON.stringify(output),
     },
   }));
+}
+
+function requestToolResultResponse(instructions) {
+  if (!dc || dc.readyState !== "open") {
+    return;
+  }
   dc.send(JSON.stringify({
     type: "response.create",
     response: {
       output_modalities: ["audio"],
-      instructions: "请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。",
+      instructions,
     },
   }));
+}
+
+function compactRobotDrawResult(result) {
+  return {
+    ok: Boolean(result.ok),
+    title: result.title,
+    interpretation: result.interpretation,
+    symbols: result.symbols,
+    image_url: result.image_url,
+    toolpath_url: result.toolpath_url,
+    point_count: result.point_count,
+    reachy_output: result.reachy_output,
+    reachy_mode: result.reachy_mode,
+  };
+}
+
+function compactRobotDrawToolCall(toolCall) {
+  if (!toolCall) {
+    return undefined;
+  }
+  const points = toolCall.xy_points || [];
+  return {
+    type: toolCall.type,
+    coordinate_frame: toolCall.coordinate_frame,
+    point_count: points.length,
+    first_points: points.slice(0, 5),
+    last_points: points.slice(-5),
+  };
 }
 
 async function refreshAudioOutputDevices() {
