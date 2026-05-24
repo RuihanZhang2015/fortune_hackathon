@@ -56,6 +56,7 @@ VAD_INTERRUPT_RESPONSE = os.getenv("OPENAI_VAD_INTERRUPT_RESPONSE", "false").low
 NOISE_REDUCTION = os.getenv("OPENAI_NOISE_REDUCTION", "far_field")
 ARM_NGROK_URL = os.getenv("ARM_NGROK_URL", "").strip()
 ARM_TRAJECTORY_Z_MM = float(os.getenv("ARM_TRAJECTORY_Z_MM", "200"))
+DRAWING_SCALE = float(os.getenv("DRAWING_SCALE", "0.65"))
 
 app = FastAPI(title="Reachy Fortune Conversation")
 app.add_middleware(
@@ -159,8 +160,8 @@ def robot_draw(request: RobotDrawRequest, background_tasks: BackgroundTasks) -> 
     if request.strokes:
         # Render PNG immediately from raw LLM strokes (fast, <5ms).
         # Full interpolated toolpath for ngrok runs in the background.
-        render_strokes_png(request.strokes, image_path)
-        background_tasks.add_task(_build_and_publish_toolpath, request, drawing_seed)
+        render_strokes_png(request.strokes, image_path, scale=DRAWING_SCALE)
+        background_tasks.add_task(_build_and_publish_toolpath, request, drawing_seed, _scale_strokes(request.strokes, DRAWING_SCALE))
         point_count = sum(len(s) for s in request.strokes)
     else:
         prompt = f"{request.prompt}。风格：{request.style}"
@@ -191,10 +192,18 @@ def robot_draw(request: RobotDrawRequest, background_tasks: BackgroundTasks) -> 
     }
 
 
-def _build_and_publish_toolpath(request: RobotDrawRequest, drawing_seed: str) -> None:
+def _scale_strokes(
+    strokes: list[list[list[float]]], scale: float
+) -> list[list[list[float]]]:
+    return [[[p[0] * scale, p[1] * scale] for p in stroke] for stroke in strokes]
+
+
+def _build_and_publish_toolpath(
+    request: RobotDrawRequest, drawing_seed: str, strokes: list[list[list[float]]]
+) -> None:
     try:
         payload = toolpath_payload_from_strokes(
-            strokes_xy=request.strokes,
+            strokes_xy=strokes,
             title=request.title or "llm_fortune",
             reading=request.reading or "",
             interpretation=request.interpretation or "",

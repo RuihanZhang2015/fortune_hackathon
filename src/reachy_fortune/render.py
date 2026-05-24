@@ -3,58 +3,43 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageDraw
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
-def render_toolpath_png(payload: dict[str, Any], output_path: str | Path, size: int = 900) -> None:
-    points = payload["points"]
-    draw_z = float(payload["draw_z"])
-    image = Image.new("RGB", (size, size), (244, 235, 214))
-    draw = ImageDraw.Draw(image)
-
-    margin = 90
-    scale = min((size - 2 * margin) / 0.46, (size - 2 * margin) / 0.34)
-    cx = size / 2
-    cy = size / 2
-
-    def project(point: list[float]) -> tuple[int, int]:
-        x, y = point[:2]
-        return int(cx + x * scale), int(cy - y * scale)
-
-    if len(points) > 1:
-        for prev_point, point in zip(points[:-1], points[1:]):
-            prev_is_drawing = float(prev_point[2]) <= draw_z + 1e-6
-            curr_is_drawing = float(point[2]) <= draw_z + 1e-6
-            if not (prev_is_drawing and curr_is_drawing):
-                continue
-            prev = project(prev_point)
-            curr = project(point)
-            draw.line([prev, curr], fill=(34, 28, 20), width=4)
-
-    # A subtle paper border.
-    draw.rectangle([margin - 20, margin - 20, size - margin + 20, size - margin + 20], outline=(190, 164, 122), width=2)
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path)
-
-
-def render_strokes_png(strokes_xy: list[list[list[float]]], output_path: str | Path, size: int = 900) -> None:
-    image = Image.new("RGB", (size, size), (244, 235, 214))
-    draw = ImageDraw.Draw(image)
-    margin = 90
-    scale = min((size - 2 * margin) / 0.46, (size - 2 * margin) / 0.34)
-    cx = size / 2
-    cy = size / 2
-
-    def project(p: list[float]) -> tuple[int, int]:
-        return int(cx + p[0] * scale), int(cy - p[1] * scale)
-
+def render_strokes_png(strokes_xy: list[list[list[float]]], output_path: str | Path, scale: float = 1.0) -> None:
+    fig, ax = plt.subplots(figsize=(5, 5), facecolor="#f4ebd6")
+    ax.set_facecolor("#f4ebd6")
+    ax.set_xlim(-0.23, 0.23)
+    ax.set_ylim(-0.17, 0.17)
+    ax.set_aspect("equal")
+    ax.axis("off")
     for stroke in strokes_xy:
         if len(stroke) < 2:
             continue
-        coords = [project(p) for p in stroke]
-        for a, b in zip(coords[:-1], coords[1:]):
-            draw.line([a, b], fill=(34, 28, 20), width=4)
-
-    draw.rectangle([margin - 20, margin - 20, size - margin + 20, size - margin + 20], outline=(190, 164, 122), width=2)
+        xs = [p[0] * scale for p in stroke]
+        ys = [p[1] * scale for p in stroke]
+        ax.plot(xs, ys, color="#221c14", linewidth=2, solid_capstyle="round", solid_joinstyle="round")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    image.save(output_path)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="#f4ebd6")
+    plt.close(fig)
+
+
+def render_toolpath_png(payload: dict[str, Any], output_path: str | Path) -> None:
+    draw_z = float(payload["draw_z"])
+    points = payload["points"]
+    strokes: list[list[list[float]]] = []
+    current: list[list[float]] = []
+    for point in points:
+        x, y, z = point
+        if float(z) <= draw_z + 1e-6:
+            current.append([float(x), float(y)])
+        elif current:
+            strokes.append(current)
+            current = []
+    if current:
+        strokes.append(current)
+    render_strokes_png(strokes, output_path)

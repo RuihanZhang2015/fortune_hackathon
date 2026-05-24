@@ -11,7 +11,7 @@ const disconnectButton = document.querySelector("#disconnect");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
 const transcriptEl = document.querySelector("#transcript");
-const imageEl = document.querySelector("#fortuneImage");
+const canvasEl = document.querySelector("#fortuneCanvas");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
 const speakerTargetEl = document.querySelector("#speakerTarget");
@@ -33,6 +33,35 @@ function log(message, data) {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+const DRAWING_SCALE = 0.65;
+
+function drawStrokesOnCanvas(strokes) {
+  const size = canvasEl.width;
+  const margin = 90;
+  const scale = Math.min((size - 2 * margin) / 0.46, (size - 2 * margin) / 0.34) * DRAWING_SCALE;
+  const cx = size / 2;
+  const cy = size / 2;
+  const ctx = canvasEl.getContext("2d");
+  ctx.fillStyle = "#f4ebd6";
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = "#221c14";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const stroke of strokes) {
+    if (stroke.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(cx + stroke[0][0] * scale, cy - stroke[0][1] * scale);
+    for (let i = 1; i < stroke.length; i++) {
+      ctx.lineTo(cx + stroke[i][0] * scale, cy - stroke[i][1] * scale);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#bea47a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(margin - 20, margin - 20, size - 2 * (margin - 20), size - 2 * (margin - 20));
 }
 
 connectButton.addEventListener("click", connectRealtime);
@@ -371,6 +400,11 @@ async function handleRobotDrawCall(item) {
   log("Tool call: robot_draw", { call_id: item.call_id, title: args.title, reading: args.reading });
   setStatus("Drawing fortune...");
 
+  // Render strokes on canvas immediately — no network roundtrip needed.
+  if (args.strokes?.length) {
+    drawStrokesOnCanvas(args.strokes);
+  }
+
   // Immediately close the tool call and trigger voice response — don't wait for the backend.
   // OpenAI already generated interpretation in the tool call args.
   sendFunctionCallOutput(item.call_id, {
@@ -402,9 +436,6 @@ async function handleRobotDrawCall(item) {
     const result = await response.json();
     if (!response.ok || result.ok === false) {
       throw new Error(result.detail || result.error || `robot_draw failed with HTTP ${response.status}`);
-    }
-    if (result.image_url) {
-      imageEl.src = `${result.image_url}?t=${Date.now()}`;
     }
     interpretationEl.textContent = result.interpretation || args.interpretation || "";
     setStatus("Fortune drawing ready.");
