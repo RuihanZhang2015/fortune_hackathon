@@ -36,7 +36,7 @@ function setStatus(text) {
 }
 
 connectButton.addEventListener("click", connectRealtime);
-sendTestButton.addEventListener("click", () => sendUserText("请用中文回复：语音测试成功。"));
+sendTestButton.addEventListener("click", () => sendUserText("Please reply in English: voice test successful."));
 muteMicButton.addEventListener("click", toggleMicMute);
 disconnectButton.addEventListener("click", disconnectRealtime);
 speakerTargetEl.addEventListener("change", applyAudioOutputDevice);
@@ -327,7 +327,7 @@ function sendInitialGreeting() {
     type: "response.create",
     response: {
       output_modalities: ["audio"],
-      instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
+      instructions: "Greet the user warmly in English and let them know you are ready to read their fortune.",
     },
   }));
 }
@@ -373,9 +373,9 @@ async function handleRobotDrawCall(item) {
     interpretation: args.interpretation || "",
   });
   requestToolResultResponse(
-    "机器人正在画图，你继续用中文讲解，持续约一分钟，语气神秘诗意，娓娓道来，不要问用户问题，不要停顿等待。" +
-    "内容：先朗读 interpretation 的内容，再展开讲今日运势的深层含义、图案象征的寓意、" +
-    "对用户今天行动的具体建议，最后以吉祥祝福收尾。不要念坐标，不要说 JSON。"
+    "The robot is drawing. Continue speaking in English for about one minute — poetic and mysterious, no pauses, no questions. " +
+    "First read the interpretation aloud, then expand on the deeper meaning of today's fortune, the symbolism of the figure, " +
+    "specific guidance for the user's day, and close with a warm blessing. Never read out coordinates or JSON."
   );
 
   // Backend fetch runs in parallel: renders image and publishes to ngrok.
