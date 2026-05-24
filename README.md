@@ -73,6 +73,32 @@ python -m drawing.gazebo_demo --toolpath outputs/fortune.json
 
 Use `--headless` to run the Gazebo server without the GUI.
 
+## Reachy Mini live fortune conversation
+
+This starts a local browser UI for microphone input, OpenAI Realtime voice
+conversation, Reachy Mini expressive motion, and the `robot_draw` tool call.
+
+```bash
+export OPENAI_API_KEY=...
+python -m reachy_fortune.app
+```
+
+Open `http://127.0.0.1:8787`, click `Connect voice`, then ask:
+
+```text
+你能给我分析今天的运势吗？
+```
+
+When the model calls `robot_draw`, the backend generates:
+
+- a robot-parseable XY trajectory in `outputs/reachy_fortune/latest_fortune_toolpath.json`
+- a rendered preview in `outputs/reachy_fortune/latest_fortune.png`
+- a mystical Chinese interpretation for Reachy to speak
+
+Route the computer audio output to Reachy Mini's speaker so the Realtime voice
+comes out of Reachy. If the Reachy Mini Python SDK is installed, the backend
+also sends simple emotional motion cues; otherwise it runs in dry-run mode.
+
 ## Coordinate model
 
 Canvas coordinates are meters in the drawing plane:

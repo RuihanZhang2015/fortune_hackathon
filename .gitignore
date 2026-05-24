@@ -6,3 +6,4 @@ __pycache__/
 .venv/
 *.egg-info/
 outputs/gazebo_fortune_pick_draw.world
+outputs/reachy_fortune/

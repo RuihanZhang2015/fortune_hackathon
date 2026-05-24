@@ -1,0 +1,134 @@
+let pc;
+let dc;
+
+const connectButton = document.querySelector("#connect");
+const disconnectButton = document.querySelector("#disconnect");
+const fortuneButton = document.querySelector("#fortune");
+const statusEl = document.querySelector("#status");
+const logEl = document.querySelector("#log");
+const imageEl = document.querySelector("#fortuneImage");
+const interpretationEl = document.querySelector("#interpretation");
+const remoteAudio = document.querySelector("#remoteAudio");
+
+function log(message, data) {
+  const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
+  logEl.textContent += `${message}${suffix}\n\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setStatus(text) {
+  statusEl.textContent = text;
+}
+
+connectButton.addEventListener("click", connectRealtime);
+disconnectButton.addEventListener("click", disconnectRealtime);
+fortuneButton.addEventListener("click", () => {
+  sendUserText("你能给我分析今天的运势，并画一张道教大师用毛笔写出来的运势图吗？");
+});
+
+async function connectRealtime() {
+  setStatus("Requesting microphone...");
+  pc = new RTCPeerConnection();
+  pc.ontrack = (event) => {
+    remoteAudio.srcObject = event.streams[0];
+  };
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  pc.addTrack(stream.getAudioTracks()[0]);
+
+  dc = pc.createDataChannel("oai-events");
+  dc.addEventListener("open", () => {
+    setStatus("Connected. Speak to Reachy.");
+    connectButton.disabled = true;
+    disconnectButton.disabled = false;
+  });
+  dc.addEventListener("message", handleRealtimeEvent);
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  const response = await fetch("/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/sdp" },
+    body: offer.sdp,
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
+}
+
+function disconnectRealtime() {
+  if (dc) dc.close();
+  if (pc) {
+    pc.getSenders().forEach((sender) => sender.track && sender.track.stop());
+    pc.close();
+  }
+  pc = null;
+  dc = null;
+  connectButton.disabled = false;
+  disconnectButton.disabled = true;
+  setStatus("Disconnected");
+}
+
+function sendUserText(text) {
+  if (!dc || dc.readyState !== "open") {
+    log("Not connected yet.");
+    return;
+  }
+  dc.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text }],
+    },
+  }));
+  dc.send(JSON.stringify({ type: "response.create" }));
+}
+
+async function handleRealtimeEvent(raw) {
+  const event = JSON.parse(raw.data);
+  if (event.type === "response.audio_transcript.done" && event.transcript) {
+    log(`Reachy: ${event.transcript}`);
+    fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
+  }
+  if (event.type === "conversation.item.input_audio_transcription.completed") {
+    log(`You: ${event.transcript}`);
+  }
+  const item = event.item || event.response?.output?.find((x) => x.type === "function_call");
+  if (item && item.type === "function_call" && item.name === "robot_draw") {
+    await handleRobotDrawCall(item);
+  }
+}
+
+async function handleRobotDrawCall(item) {
+  let args = {};
+  try {
+    args = JSON.parse(item.arguments || "{}");
+  } catch {
+    args = {};
+  }
+  log("Tool call: robot_draw", args);
+  const result = await fetch("/api/robot_draw", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: args.prompt || "给我分析今天的运势",
+      style: args.style || "道教符箓、毛笔、玄妙、抽象",
+    }),
+  }).then((r) => r.json());
+
+  imageEl.src = `${result.image_url}?t=${Date.now()}`;
+  interpretationEl.textContent = result.interpretation;
+  log("Tool result", { point_count: result.point_count, image_url: result.image_url });
+
+  dc.send(JSON.stringify({
+    type: "conversation.item.create",
+    item: {
+      type: "function_call_output",
+      call_id: item.call_id,
+      output: JSON.stringify(result),
+    },
+  }));
+  dc.send(JSON.stringify({ type: "response.create" }));
+}

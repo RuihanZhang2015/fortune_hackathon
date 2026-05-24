@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reachy Fortune Conversation</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="left">
+        <h1>Reachy 玄运对话</h1>
+        <div class="controls">
+          <button id="connect">Connect voice</button>
+          <button id="fortune">Ask fortune</button>
+          <button id="disconnect" disabled>Disconnect</button>
+        </div>
+        <p id="status">Idle</p>
+        <audio id="remoteAudio" autoplay></audio>
+        <pre id="log"></pre>
+      </section>
+      <section class="right">
+        <img id="fortuneImage" alt="fortune drawing render" />
+        <p id="interpretation"></p>
+      </section>
+    </main>
+    <script src="/static/main.js"></script>
+  </body>
+</html>
+
