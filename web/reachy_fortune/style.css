@@ -27,7 +27,7 @@ h1 {
 
 .output-panel {
   display: grid;
-  grid-template-columns: minmax(190px, auto) minmax(220px, 1fr);
+  grid-template-columns: minmax(190px, auto) minmax(190px, auto) minmax(220px, 1fr);
   gap: 10px;
   align-items: center;
   margin: 14px 0 8px;

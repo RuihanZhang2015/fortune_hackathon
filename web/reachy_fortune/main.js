@@ -13,9 +13,11 @@ const imageEl = document.querySelector("#fortuneImage");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
 const reachyOutputEl = document.querySelector("#reachyOutput");
+const localSpeechEl = document.querySelector("#localSpeech");
 const audioOutputEl = document.querySelector("#audioOutput");
 let assistantTranscript = "";
 let userTranscript = "";
+let lastSpokenText = "";
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -148,6 +150,7 @@ async function handleRealtimeEvent(raw) {
     assistantTranscript = event.transcript;
     renderTranscript();
     log(`Reachy transcript: ${event.transcript}`);
+    speakTranscriptLocally(event.transcript);
     if (reachyOutputEl.checked) {
       fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
     }
@@ -160,6 +163,7 @@ async function handleRealtimeEvent(raw) {
     assistantTranscript = event.text;
     renderTranscript();
     log(`Reachy text: ${event.text}`);
+    speakTranscriptLocally(event.text);
   }
   if (event.type === "conversation.item.input_audio_transcription.delta") {
     userTranscript += event.delta || "";
@@ -189,6 +193,7 @@ function captureTranscriptFromResponse(response) {
     assistantTranscript = text;
     renderTranscript();
     log(`Reachy transcript fallback: ${text}`);
+    speakTranscriptLocally(text);
   }
 }
 
@@ -197,6 +202,17 @@ function renderTranscript() {
     userTranscript ? `You: ${userTranscript}` : "",
     assistantTranscript ? `Reachy: ${assistantTranscript}` : "",
   ].filter(Boolean).join("\n\n");
+}
+
+function speakTranscriptLocally(text) {
+  const cleanText = (text || "").trim();
+  if (!localSpeechEl.checked || !cleanText || cleanText === lastSpokenText) return;
+  lastSpokenText = cleanText;
+  fetch("/api/local/say", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: cleanText }),
+  }).catch((error) => log("Local speech failed", { message: error.message }));
 }
 
 async function handleRobotDrawCall(item) {

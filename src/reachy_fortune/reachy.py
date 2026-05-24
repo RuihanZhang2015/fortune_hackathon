@@ -31,6 +31,9 @@ class ReachyController:
             # Keep SDK control focused on expressive motion.
             print(f"[Reachy speech route] {text}")
             return
+        self.say_local(text)
+
+    def say_local(self, text: str) -> None:
         if sys.platform == "darwin":
             threading.Thread(
                 target=lambda: subprocess.run(["say", "-v", "Tingting", text], check=False),

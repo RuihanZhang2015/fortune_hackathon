@@ -144,6 +144,12 @@ def reachy_say(request: SayRequest) -> JSONResponse:
     return JSONResponse({"ok": True, "mode": reachy.mode})
 
 
+@app.post("/api/local/say")
+def local_say(request: SayRequest) -> JSONResponse:
+    reachy.say_local(request.text)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/reachy/express/{emotion}")
 def reachy_express(emotion: str) -> JSONResponse:
     reachy.express(emotion)
