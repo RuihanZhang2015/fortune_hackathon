@@ -42,7 +42,6 @@ refreshAudioOutputDevices();
 async function connectRealtime() {
   setStatus("Requesting microphone...");
   pc = new RTCPeerConnection();
-  pc.addTransceiver("audio", { direction: "recvonly" });
   pc.addEventListener("connectionstatechange", () => {
     log("Peer connection state", {
       connection_state: pc.connectionState,
@@ -84,6 +83,7 @@ async function connectRealtime() {
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
+  log("Local SDP summary", summarizeSdp(offer.sdp));
   const response = await fetch("/session", {
     method: "POST",
     headers: { "Content-Type": "application/sdp" },
@@ -92,7 +92,17 @@ async function connectRealtime() {
   if (!response.ok) {
     throw new Error(await response.text());
   }
-  await pc.setRemoteDescription({ type: "answer", sdp: await response.text() });
+  const answerSdp = await response.text();
+  log("Remote SDP summary", summarizeSdp(answerSdp));
+  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+}
+
+function summarizeSdp(sdp) {
+  return {
+    has_audio: sdp.includes("m=audio"),
+    has_data_channel: sdp.includes("m=application"),
+    audio_lines: sdp.split("\n").filter((line) => line.startsWith("m=audio") || line.startsWith("a=send") || line.startsWith("a=recv")),
+  };
 }
 
 async function ensureRemoteAudioPlaying(source) {
