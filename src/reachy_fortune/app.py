@@ -62,6 +62,11 @@ async def create_realtime_session(request: Request) -> str:
         "audio": {
             "input": {
                 "turn_detection": {"type": "semantic_vad"},
+                "transcription": {
+                    "model": "gpt-realtime-whisper",
+                    "language": "zh",
+                    "delay": "low",
+                },
             },
             "output": {
                 "voice": VOICE,

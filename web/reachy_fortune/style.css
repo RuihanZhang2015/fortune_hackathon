@@ -94,6 +94,17 @@ button:disabled {
   margin-bottom: 10px;
 }
 
+#transcript {
+  min-height: 92px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  background: #fffaf0;
+  border: 1px solid #bda985;
+  border-radius: 6px;
+}
+
 #log {
   min-height: 360px;
   max-height: 58vh;

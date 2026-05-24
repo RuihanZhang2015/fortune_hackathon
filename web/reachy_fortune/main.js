@@ -8,11 +8,14 @@ const fortuneButton = document.querySelector("#fortune");
 const playAudioButton = document.querySelector("#playAudio");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
+const transcriptEl = document.querySelector("#transcript");
 const imageEl = document.querySelector("#fortuneImage");
 const interpretationEl = document.querySelector("#interpretation");
 const remoteAudio = document.querySelector("#remoteAudio");
 const reachyOutputEl = document.querySelector("#reachyOutput");
 const audioOutputEl = document.querySelector("#audioOutput");
+let assistantTranscript = "";
+let userTranscript = "";
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -137,21 +140,63 @@ async function handleRealtimeEvent(raw) {
   if (event.type === "error") {
     log("Realtime error", event);
   }
+  if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
+    assistantTranscript += event.delta || "";
+    renderTranscript();
+  }
   if ((event.type === "response.output_audio_transcript.done" || event.type === "response.audio_transcript.done") && event.transcript) {
-    log(`Reachy: ${event.transcript}`);
+    assistantTranscript = event.transcript;
+    renderTranscript();
+    log(`Reachy transcript: ${event.transcript}`);
     if (reachyOutputEl.checked) {
       fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
     }
   }
+  if (event.type === "response.output_text.delta" || event.type === "response.text.delta") {
+    assistantTranscript += event.delta || "";
+    renderTranscript();
+  }
+  if ((event.type === "response.output_text.done" || event.type === "response.text.done") && event.text) {
+    assistantTranscript = event.text;
+    renderTranscript();
+    log(`Reachy text: ${event.text}`);
+  }
+  if (event.type === "conversation.item.input_audio_transcription.delta") {
+    userTranscript += event.delta || "";
+    renderTranscript();
+  }
   if (event.type === "conversation.item.input_audio_transcription.completed") {
-    log(`You: ${event.transcript}`);
+    userTranscript = event.transcript || userTranscript;
+    renderTranscript();
+    log(`You transcript: ${userTranscript}`);
   }
   if (event.type === "response.done") {
+    captureTranscriptFromResponse(event.response);
     const calls = event.response?.output?.filter((x) => x.type === "function_call" && x.name === "robot_draw") || [];
     for (const item of calls) {
       await handleRobotDrawCall(item);
     }
   }
+}
+
+function captureTranscriptFromResponse(response) {
+  const text = response?.output
+    ?.flatMap((item) => item.content || [])
+    ?.map((content) => content.transcript || content.text || "")
+    ?.filter(Boolean)
+    ?.join("\n");
+  if (text) {
+    assistantTranscript = text;
+    renderTranscript();
+    log(`Reachy transcript fallback: ${text}`);
+  }
+}
+
+function renderTranscript() {
+  transcriptEl.textContent = [
+    userTranscript ? `You: ${userTranscript}` : "",
+    assistantTranscript ? `Reachy: ${assistantTranscript}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 
 async function handleRobotDrawCall(item) {
