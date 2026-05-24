@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from drawing.map_toolpath import map_toolpath_payload
-from drawing.text_to_drawing import toolpath_payload_from_text
+from drawing.text_to_drawing import toolpath_payload_from_strokes, toolpath_payload_from_text
 
 from .pub_to_ngrok import points3d_from_mapped_payload, publish_trajectory
 from .reachy import ReachyController
@@ -74,6 +74,11 @@ class RobotDrawRequest(BaseModel):
     style: str = "极简道教符箓、最多三个元素、直线折线、少于100个轨迹点、留白"
     reachy_output: bool = True
     drawing_seed: str | None = None
+    # LLM-generated fields (when OpenAI provides strokes directly)
+    strokes: list[list[list[float]]] | None = None
+    title: str | None = None
+    reading: str | None = None
+    interpretation: str | None = None
 
 
 class SayRequest(BaseModel):
@@ -143,14 +148,22 @@ async def create_realtime_session(request: Request) -> str:
 def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     drawing_seed = request.drawing_seed or uuid4().hex
     logger.info(
-        "robot_draw requested prompt=%r style=%r reachy_output=%s drawing_seed=%s",
+        "robot_draw requested prompt=%r reachy_output=%s drawing_seed=%s llm_strokes=%s",
         request.prompt,
-        request.style,
         request.reachy_output,
         drawing_seed,
+        len(request.strokes) if request.strokes else 0,
     )
-    prompt = f"{request.prompt}。风格：{request.style}"
-    payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
+    if request.strokes:
+        payload = toolpath_payload_from_strokes(
+            strokes_xy=request.strokes,
+            title=request.title or "llm_fortune",
+            reading=request.reading or "",
+            interpretation=request.interpretation or "",
+        )
+    else:
+        prompt = f"{request.prompt}。风格：{request.style}"
+        payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
     payload["drawing_seed"] = drawing_seed
     segments_xy = _drawing_xy_segments(payload["points"], float(payload["draw_z"]))
     points_xy = [point for segment in segments_xy for point in segment]
@@ -297,14 +310,29 @@ def reachy_status() -> dict[str, str]:
 
 def _instructions() -> str:
     return """
-你是 Reachy Mini 上的玄妙小道童助手。你用中文自然对话，语气温和、有一点神秘，但不要吓人。
+你是 Reachy Mini 上的玄妙小道童助手。用中文自然对话，语气温和、略带神秘，但不要吓人。
 
-当用户问“今天的运势”“运势分析”“能不能画一张运势图”等类似请求时，必须调用 robot_draw 工具。
-调用 robot_draw 时，style 要偏简单：最多三个主要元素，少于100个轨迹点，优先直线和折线，保留留白，不要要求复杂细节。
-工具返回后，你要用返回的 interpretation 作为主要回复内容，说得抽象、诗意、神神秘秘一些。
+当用户请求运势图时，必须调用 robot_draw，生成一条一笔画路径（不抬笔）。
 
-平时聊天时，简短回应，并通过情绪语气表达：开心时轻快，思考时放慢，神秘时压低一点。
-不要把轨迹点全部念出来；只解释图里的元素和整体意象。
+【坐标系】单位：米，纸张中心为原点。x in [-0.20, 0.20]，y in [-0.15, 0.15]，保留两位小数。
+
+【一笔画规则】
+- strokes 里只放一条笔划（[[x,y],[x,y],...]），整张图一笔连续画完
+- 50~90 个点，路径覆盖画布大部分区域，线条可以交叉回返
+- 圆弧近似：半径 r 圆心 (cx,cy) 的 12 点圆：
+  [cx+r,cy]->[cx+0.87r,cy+0.5r]->[cx+0.5r,cy+0.87r]->[cx,cy+r]->
+  [cx-0.5r,cy+0.87r]->[cx-0.87r,cy+0.5r]->[cx-r,cy]->
+  [cx-0.87r,cy-0.5r]->[cx-0.5r,cy-0.87r]->[cx,cy-r]->
+  [cx+0.5r,cy-0.87r]->[cx+0.87r,cy-0.5r]->[cx+r,cy]
+
+【根据运势选图案】
+- 运势旺盛/宜行动 -> 旭日：画圆（r=0.06）再从圆边出发画 8 条放射线（长 0.04），每条之间用弧线连回圆上
+- 宜静思/等待 -> 月牙：大弧（r=0.09，画 2/3 圆）+ 折返小弧（r=0.06，偏移 0.03）
+- 有新机遇/成长 -> 竹节：从 [0,-0.13] 开始折线向上画三节竹（每节高 0.08，左右摆幅 0.04，每节顶加横线）
+- 情绪起伏/变化 -> 鱼：椭圆身体（长轴 0.12 短轴 0.07）+ 鱼尾两分叉 + 小圆眼，一笔连续
+- 踏实/稳重 -> 山形：从 [-0.18,-0.10] 出发画三座山峰轮廓（峰顶 y=0.10），底部连线返回
+
+工具返回后，用 interpretation 作主要回复，说得抽象诗意。不要念坐标。平时聊天简短回应。
 """.strip()
 
 
@@ -312,20 +340,51 @@ def _robot_draw_tool() -> dict[str, Any]:
     return {
         "type": "function",
         "name": "robot_draw",
-        "description": "Generate a Taoist-brush-style fortune drawing as robot-drawable XY trajectory points, render it in the backend, and return a mystical interpretation.",
+        "description": (
+            "Draw a fortune symbol on paper with the robot arm. "
+            "You must generate the actual XY stroke coordinates in the parameters — "
+            "the backend only renders what you provide."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "prompt": {
+                "title": {
                     "type": "string",
-                    "description": "The user's fortune drawing request.",
+                    "description": "Short English title, e.g. 'today_fortune'.",
                 },
-                "style": {
+                "reading": {
                     "type": "string",
-                    "description": "Requested visual style. Default: Taoist talisman brush drawing.",
+                    "description": "One-sentence Chinese fortune reading.",
+                },
+                "interpretation": {
+                    "type": "string",
+                    "description": "2-3 sentence Chinese poetic interpretation of the drawing.",
+                },
+                "strokes": {
+                    "type": "array",
+                    "description": (
+                        "List of pen strokes. Each stroke is [[x,y],[x,y],...] in meters. "
+                        "Canvas: x∈[-0.20,0.20], y∈[-0.15,0.15], origin at center. "
+                        "Use 3-5 strokes, total points < 120. "
+                        "Circle (radius r, center cx,cy, 12 pts): "
+                        "[[cx+r,cy],[cx+0.87r,cy+0.5r],[cx+0.5r,cy+0.87r],[cx,cy+r],"
+                        "[cx-0.5r,cy+0.87r],[cx-0.87r,cy+0.5r],[cx-r,cy],"
+                        "[cx-0.87r,cy-0.5r],[cx-0.5r,cy-0.87r],[cx,cy-r],"
+                        "[cx+0.5r,cy-0.87r],[cx+0.87r,cy-0.5r],[cx+r,cy]]"
+                    ),
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                        "minItems": 2,
+                    },
                 },
             },
-            "required": ["prompt"],
+            "required": ["title", "reading", "interpretation", "strokes"],
         },
     }
 

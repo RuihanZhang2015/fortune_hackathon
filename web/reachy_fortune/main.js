@@ -336,6 +336,10 @@ async function handleRobotDrawCall(item) {
         prompt: args.prompt || "给我分析今天的运势",
         style: args.style || "道教符箓、毛笔、玄妙、抽象",
         reachy_output: true,
+        strokes: args.strokes || null,
+        title: args.title || null,
+        reading: args.reading || null,
+        interpretation: args.interpretation || null,
       }),
     });
     result = await response.json();
@@ -409,6 +413,7 @@ function compactRobotDrawResult(result) {
     drawing_seed: result.drawing_seed,
     reachy_output: result.reachy_output,
     reachy_mode: result.reachy_mode,
+    arm_publish: result.arm_publish,
   };
 }
 
