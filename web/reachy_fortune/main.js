@@ -52,7 +52,6 @@ async function connectRealtime() {
     dc.send(JSON.stringify({
       type: "response.create",
       response: {
-        modalities: ["audio"],
         instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
       },
     }));
@@ -163,7 +162,6 @@ async function handleRobotDrawCall(item) {
   dc.send(JSON.stringify({
     type: "response.create",
     response: {
-      modalities: ["audio"],
       instructions: "请用中文把 tool result 里的 interpretation 讲给用户听。不要念坐标点，不要说 JSON。",
     },
   }));
