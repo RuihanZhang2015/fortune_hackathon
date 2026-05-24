@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from drawing.map_toolpath import map_toolpath_payload
 from drawing.text_to_drawing import toolpath_payload_from_text
 
+from .pub_to_ngrok import points3d_from_mapped_payload, publish_trajectory
 from .reachy import ReachyController
 from .render import render_toolpath_png
 
@@ -53,6 +54,8 @@ VAD_SILENCE_DURATION_MS = int(os.getenv("OPENAI_VAD_SILENCE_DURATION_MS", "900")
 VAD_CREATE_RESPONSE = os.getenv("OPENAI_VAD_CREATE_RESPONSE", "true").lower() == "true"
 VAD_INTERRUPT_RESPONSE = os.getenv("OPENAI_VAD_INTERRUPT_RESPONSE", "false").lower() == "true"
 NOISE_REDUCTION = os.getenv("OPENAI_NOISE_REDUCTION", "far_field")
+ARM_NGROK_URL = os.getenv("ARM_NGROK_URL", "").strip()
+ARM_TRAJECTORY_Z_MM = float(os.getenv("ARM_TRAJECTORY_Z_MM", "200"))
 
 app = FastAPI(title="Reachy Fortune Conversation")
 app.add_middleware(
@@ -165,6 +168,7 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     mapped_payload = _mapped_coordinates_payload(payload)
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     mapped_json_path.write_text(json.dumps(mapped_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    publish_result = _publish_to_arm_ngrok(mapped_payload)
     render_toolpath_png(payload, image_path)
     logger.info(
         "robot_draw generated title=%r point_count=%s frame=%s json_path=%s mapped_json_path=%s image_path=%s first_points=%s last_points=%s",
@@ -188,6 +192,7 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         "image_url": "/api/latest_render.png",
         "toolpath_url": "/api/latest_toolpath.json",
         "coordinates_url": "/api/latest_coordinates.json",
+        "arm_publish": publish_result,
         "tool_call": payload["robot_draw_tool_call"],
         "point_count": len(points_xy),
         "drawing_seed": drawing_seed,
@@ -200,6 +205,27 @@ def _mapped_coordinates_payload(payload: dict[str, Any]) -> dict[str, Any]:
     mapped = map_toolpath_payload(payload)
     mapped["source_toolpath_url"] = "/api/latest_toolpath.json"
     return mapped
+
+
+def _publish_to_arm_ngrok(mapped_payload: dict[str, Any]) -> dict[str, Any]:
+    if not ARM_NGROK_URL:
+        return {"ok": False, "skipped": True, "reason": "ARM_NGROK_URL is not set"}
+    points = points3d_from_mapped_payload(mapped_payload, z_mm=ARM_TRAJECTORY_Z_MM)
+    try:
+        response = publish_trajectory(ARM_NGROK_URL, points, verbose=False)
+    except SystemExit as error:
+        logger.exception("arm ngrok publish exited")
+        return {"ok": False, "skipped": False, "error": str(error)}
+    except Exception as error:
+        logger.exception("arm ngrok publish failed")
+        return {"ok": False, "skipped": False, "error": str(error)}
+    return {
+        "ok": response.is_success,
+        "skipped": False,
+        "status_code": response.status_code,
+        "point_count": len(points),
+        "url": ARM_NGROK_URL,
+    }
 
 
 def _drawing_xy_segments(points: list[list[float]], draw_z: float) -> list[list[list[float]]]:

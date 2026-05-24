@@ -437,7 +437,10 @@ async function refreshAudioOutputDevices() {
     const label = device.label || `Speaker ${audioOutputEl.length}`;
     audioOutputEl.append(new Option(label, device.deviceId));
   }
-  if ([...audioOutputEl.options].some((option) => option.value === selected)) {
+  const reachyOutput = getReachyAudioOutput();
+  if (speakerTargetEl.value === "reachy" && reachyOutput) {
+    audioOutputEl.value = reachyOutput.deviceId;
+  } else if ([...audioOutputEl.options].some((option) => option.value === selected)) {
     audioOutputEl.value = selected;
   }
   audioOutputEl.disabled = typeof remoteAudio.setSinkId !== "function";
@@ -470,8 +473,12 @@ function getSelectedAudioOutputDeviceId() {
   if (speakerTargetEl.value !== "reachy") {
     return audioOutputEl.value;
   }
-  const reachyOutput = audioOutputs.find((device) => /reachy|mini/i.test(device.label || ""));
+  const reachyOutput = getReachyAudioOutput();
   return reachyOutput?.deviceId || "";
+}
+
+function getReachyAudioOutput() {
+  return audioOutputs.find((device) => /reachy|mini/i.test(device.label || ""));
 }
 
 function getAudioOutputLabel(deviceId) {
