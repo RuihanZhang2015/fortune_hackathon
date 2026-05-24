@@ -42,6 +42,14 @@ refreshAudioOutputDevices();
 async function connectRealtime() {
   setStatus("Requesting microphone...");
   pc = new RTCPeerConnection();
+  pc.addTransceiver("audio", { direction: "recvonly" });
+  pc.addEventListener("connectionstatechange", () => {
+    log("Peer connection state", {
+      connection_state: pc.connectionState,
+      ice_state: pc.iceConnectionState,
+      signaling_state: pc.signalingState,
+    });
+  });
   pc.ontrack = (event) => {
     remoteAudio.srcObject = event.streams[0];
     remoteAudio.muted = false;
