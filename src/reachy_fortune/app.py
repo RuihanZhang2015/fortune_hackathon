@@ -9,10 +9,12 @@ from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from drawing.map_toolpath import map_toolpath_payload
 from drawing.text_to_drawing import toolpath_payload_from_text
 
 from .reachy import ReachyController
@@ -53,6 +55,12 @@ VAD_INTERRUPT_RESPONSE = os.getenv("OPENAI_VAD_INTERRUPT_RESPONSE", "false").low
 NOISE_REDUCTION = os.getenv("OPENAI_NOISE_REDUCTION", "far_field")
 
 app = FastAPI(title="Reachy Fortune Conversation")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 reachy = ReachyController()
@@ -60,7 +68,7 @@ reachy = ReachyController()
 
 class RobotDrawRequest(BaseModel):
     prompt: str = "给我分析今天的运势"
-    style: str = "道教符箓、毛笔、玄妙、抽象"
+    style: str = "极简道教符箓、最多三个元素、直线折线、少于100个轨迹点、留白"
     reachy_output: bool = True
     drawing_seed: str | None = None
 
@@ -141,23 +149,30 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
     prompt = f"{request.prompt}。风格：{request.style}"
     payload = toolpath_payload_from_text(prompt, seed_text=f"{prompt}:{drawing_seed}")
     payload["drawing_seed"] = drawing_seed
-    points_xy = [[float(x), float(y)] for x, y, z in payload["points"] if z <= payload["draw_z"] + 1e-6]
+    segments_xy = _drawing_xy_segments(payload["points"], float(payload["draw_z"]))
+    points_xy = [point for segment in segments_xy for point in segment]
     payload["robot_draw_tool_call"] = {
         "type": "robot_draw",
         "coordinate_frame": "paper_xy_meters",
+        "path_mode": "straight_line_segments",
+        "xy_segments": segments_xy,
         "xy_points": points_xy,
     }
 
     json_path = OUTPUT_DIR / "latest_fortune_toolpath.json"
+    mapped_json_path = OUTPUT_DIR / "latest_fortune_mapped.json"
     image_path = OUTPUT_DIR / "latest_fortune.png"
+    mapped_payload = _mapped_coordinates_payload(payload)
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    mapped_json_path.write_text(json.dumps(mapped_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     render_toolpath_png(payload, image_path)
     logger.info(
-        "robot_draw generated title=%r point_count=%s frame=%s json_path=%s image_path=%s first_points=%s last_points=%s",
+        "robot_draw generated title=%r point_count=%s frame=%s json_path=%s mapped_json_path=%s image_path=%s first_points=%s last_points=%s",
         payload["title"],
         len(points_xy),
         payload["robot_draw_tool_call"]["coordinate_frame"],
         json_path,
+        mapped_json_path,
         image_path,
         points_xy[:5],
         points_xy[-5:],
@@ -172,12 +187,35 @@ def robot_draw(request: RobotDrawRequest) -> dict[str, Any]:
         "symbols": payload["symbols"],
         "image_url": "/api/latest_render.png",
         "toolpath_url": "/api/latest_toolpath.json",
+        "coordinates_url": "/api/latest_coordinates.json",
         "tool_call": payload["robot_draw_tool_call"],
         "point_count": len(points_xy),
         "drawing_seed": drawing_seed,
         "reachy_output": request.reachy_output,
         "reachy_mode": reachy.mode,
     }
+
+
+def _mapped_coordinates_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    mapped = map_toolpath_payload(payload)
+    mapped["source_toolpath_url"] = "/api/latest_toolpath.json"
+    return mapped
+
+
+def _drawing_xy_segments(points: list[list[float]], draw_z: float) -> list[list[list[float]]]:
+    segments: list[list[list[float]]] = []
+    current: list[list[float]] = []
+    for point in points:
+        x, y, z = point
+        if float(z) <= draw_z + 1e-6:
+            current.append([float(x), float(y)])
+            continue
+        if current:
+            segments.append(current)
+            current = []
+    if current:
+        segments.append(current)
+    return segments
 
 
 @app.get("/api/latest_render.png")
@@ -194,6 +232,18 @@ def latest_toolpath() -> FileResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail="No fortune toolpath generated yet")
     return FileResponse(path, media_type="application/json")
+
+
+@app.get("/api/latest_coordinates.json")
+def latest_coordinates() -> FileResponse:
+    path = OUTPUT_DIR / "latest_fortune_mapped.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No mapped fortune coordinates generated yet")
+    return FileResponse(
+        path,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"},
+    )
 
 
 @app.post("/api/reachy/say")
@@ -224,6 +274,7 @@ def _instructions() -> str:
 你是 Reachy Mini 上的玄妙小道童助手。你用中文自然对话，语气温和、有一点神秘，但不要吓人。
 
 当用户问“今天的运势”“运势分析”“能不能画一张运势图”等类似请求时，必须调用 robot_draw 工具。
+调用 robot_draw 时，style 要偏简单：最多三个主要元素，少于100个轨迹点，优先直线和折线，保留留白，不要要求复杂细节。
 工具返回后，你要用返回的 interpretation 作为主要回复内容，说得抽象、诗意、神神秘秘一些。
 
 平时聊天时，简短回应，并通过情绪语气表达：开心时轻快，思考时放慢，神秘时压低一点。

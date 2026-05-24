@@ -23,11 +23,26 @@ class ReachyFortuneAppTest(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["tool_call"]["type"], "robot_draw")
         self.assertGreater(data["point_count"], 20)
+        self.assertLessEqual(data["point_count"], 100)
+        self.assertLessEqual(len(data["symbols"]), 3)
+        segments = data["tool_call"]["xy_segments"]
+        self.assertGreater(len(segments), 1)
+        self.assertEqual(sum(len(segment) for segment in segments), len(data["tool_call"]["xy_points"]))
         self.assertIn("玄运图", data["interpretation"])
+        self.assertEqual(data["coordinates_url"], "/api/latest_coordinates.json")
 
         image_response = client.get(data["image_url"])
         self.assertEqual(image_response.status_code, 200)
         self.assertEqual(image_response.headers["content-type"], "image/png")
+
+        coordinates_response = client.get("/api/latest_coordinates.json")
+        self.assertEqual(coordinates_response.status_code, 200)
+        coordinates = coordinates_response.json()
+        self.assertTrue(coordinates["swap_xy"])
+        self.assertEqual(coordinates["path_mode"], "straight_line_segments")
+        self.assertEqual(coordinates["point_count"], data["point_count"])
+        self.assertIn("no-store", coordinates_response.headers["cache-control"])
+        self.assertTrue(Path("outputs/reachy_fortune/latest_fortune_mapped.json").exists())
 
     def test_robot_draw_can_skip_reachy_output(self):
         client = TestClient(app)

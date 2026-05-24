@@ -77,6 +77,8 @@ def toolpath_payload_from_text(
 ) -> dict:
     """Compile natural language into a robot-parseable trajectory payload."""
     plan = plan_from_text(prompt, today=today, seed_text=seed_text)
+    if plan.title == "today_fortune":
+        spacing = max(spacing, 0.028)
     strokes = [stroke.with_lift(draw_z=draw_z, travel_z=travel_z) for stroke in plan.strokes]
     path = _interpolate_strokes(strokes, spacing=spacing)
     return {
@@ -116,11 +118,9 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
 
     taiji_radius = 0.052 + 0.00022 * (energy - 55)
     seal_size = 0.042 + 0.00018 * opportunity
-    wave_amp = 0.010 + 0.00023 * (emotion - 40)
-    caution_radius = 0.015 + 0.00018 * caution
 
     strokes = [
-        *_taiji_mark(center=_variant_point(variant, "taiji"), radius=taiji_radius),
+        *_straight_taiji_mark(center=_variant_point(variant, "taiji"), radius=taiji_radius),
         *_trigram_mark(
             origin=_variant_point(variant, "trigram"),
             width=0.09 + 0.00045 * opportunity,
@@ -132,28 +132,7 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
             height=0.128 + 0.00042 * energy,
             width=seal_size,
         ),
-        wave_points(
-            start=_variant_point(variant, "wave"),
-            width=0.32 + 0.0007 * opportunity,
-            amplitude=wave_amp,
-            cycles=2.1 + 0.18 * variant,
-        ),
-        arc_points(
-            center=_variant_point(variant, "arc"),
-            radius=0.067 + 0.00045 * emotion,
-            start_angle=3.1 + 0.16 * variant,
-            end_angle=5.35 + 0.13 * variant,
-        ),
-        circle_points(center=_variant_point(variant, "caution"), radius=caution_radius, samples=48),
-        polyline_points(_variant_caution_line(variant)),
-        star_points(
-            center=_variant_point(variant, "star"),
-            outer_radius=0.019 + 0.0001 * energy,
-            tips=4 + (score % 2),
-            rotation=math.pi / 4.0 + 0.12 * variant,
-        ),
     ]
-    strokes.extend(_variant_extra_marks(variant, score))
     level = "偏旺" if score >= 67 else "平稳上升" if score >= 34 else "温和蓄力"
     best_window = "日光初明时" if opportunity >= 72 else "午后气缓时" if emotion >= 70 else "暮色未沉时"
     action = "定心而后言，择一事轻轻推开" if opportunity >= 70 else "收束杂念，守住一线清明"
@@ -163,21 +142,15 @@ def _fortune_plan(score: int, today: date) -> DrawingPlan:
         "阴阳相抱，机缘藏于静处；先守中线，再顺势开门。"
     )
     interpretation = (
-        "这张玄运图不逐项报数，而看气势。左侧太极印为底盘，阴阳相抱，表示今日宜先安内，"
-        "再向外行事；右上三爻卦为机缘门，线有连断，说明机会不是直落掌心，而要顺着缝隙进入；"
-        "中央符箓为行动轴，竖线定心，折笔开路，像一道先收后放的符令；"
-        f"第{variant + 1}式变图把这些符号重新排布，说明同一运势也会因入局角度不同而显出不同纹路；"
-        "底部云气为心潮，提醒言语和决定都不宜太急；朱砂印为避忌，"
+        "这张玄运图只留三个主元素，看气势，不逐项报数。太极印为底盘，阴阳相抱，表示今日宜先安内，"
+        "再向外行事；三爻卦为机缘门，线有连断，说明机会不是直落掌心，而要顺着缝隙进入；"
+        "中央符箓为行动轴，竖线定心，折笔开路，像一道先收后放的符令，提醒言语和决定都不宜太急，"
         f"{caution_text}。若要取用此图，可在{best_window}行一件小而明确的事：{action}。"
     )
     symbols = [
         {"name": "taiji_seal", "meaning": "yin-yang baseline"},
         {"name": "three_line_hexagram", "meaning": "opportunity hidden in timing"},
         {"name": "talisman_axis", "meaning": "settle first, then open the path"},
-        {"name": "cloud_wave", "meaning": "emotional current"},
-        {"name": "cinnabar_caution_dot", "meaning": caution_text},
-        {"name": "guiding_star", "meaning": "a small guiding sign"},
-        {"name": f"fortune_variant_{variant + 1}", "meaning": "per-request symbolic layout"},
     ]
     return DrawingPlan(
         title="today_fortune",
@@ -220,6 +193,18 @@ def _sun_rays(center: tuple[float, float], radius: float) -> list[Stroke]:
     return rays
 
 
+def _straight_taiji_mark(center: tuple[float, float], radius: float) -> list[Stroke]:
+    x, y = center
+    return [
+        _diamond_points(center=center, radius=radius),
+        polyline_points([(x, y + radius), (x, y - radius)]),
+        polyline_points([(x - radius * 0.55, y + radius * 0.24), (x + radius * 0.55, y + radius * 0.24)]),
+        polyline_points([(x - radius * 0.55, y - radius * 0.24), (x + radius * 0.55, y - radius * 0.24)]),
+        _diamond_points(center=(x, y + radius * 0.47), radius=radius * 0.13),
+        _diamond_points(center=(x, y - radius * 0.47), radius=radius * 0.13),
+    ]
+
+
 def _taiji_mark(center: tuple[float, float], radius: float) -> list[Stroke]:
     return [
         circle_points(center=center, radius=radius, samples=112),
@@ -230,6 +215,51 @@ def _taiji_mark(center: tuple[float, float], radius: float) -> list[Stroke]:
         circle_points(center=(center[0], center[1] + radius / 2.0), radius=radius * 0.12, samples=28),
         circle_points(center=(center[0], center[1] - radius / 2.0), radius=radius * 0.12, samples=28),
     ]
+
+
+def _diamond_points(center: tuple[float, float], radius: float) -> Stroke:
+    x, y = center
+    return polyline_points(
+        [(x, y + radius), (x + radius, y), (x, y - radius), (x - radius, y)],
+        closed=True,
+    )
+
+
+def _zigzag_wave_points(
+    start: tuple[float, float],
+    width: float,
+    amplitude: float = 0.018,
+    cycles: float = 2.0,
+) -> Stroke:
+    if width <= 0:
+        raise ValueError("width must be positive")
+    steps = max(6, int(round(cycles * 4)))
+    points = []
+    for index in range(steps + 1):
+        x = start[0] + width * index / steps
+        if index == 0 or index == steps:
+            y = start[1]
+        else:
+            y = start[1] + (amplitude if index % 2 else -amplitude)
+        points.append((x, y))
+    return polyline_points(points)
+
+
+def _angled_arc_points(
+    center: tuple[float, float],
+    radius: float,
+    start_angle: float,
+    end_angle: float,
+) -> Stroke:
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+    samples = 6
+    theta = np.linspace(start_angle, end_angle, samples)
+    points = [
+        (center[0] + radius * math.cos(angle), center[1] + radius * math.sin(angle))
+        for angle in theta
+    ]
+    return polyline_points(points)
 
 
 def _trigram_mark(
@@ -318,8 +348,8 @@ def _variant_extra_marks(variant: int, score: int) -> list[Stroke]:
         return _sun_rays(center=(0.0, 0.12), radius=0.018 + 0.00008 * score)
     if variant == 1:
         return [
-            circle_points(center=(-0.012, 0.112), radius=0.025, samples=44),
-            arc_points(center=(-0.004, 0.116), radius=0.024, start_angle=1.55, end_angle=4.7, samples=30),
+            _diamond_points(center=(-0.012, 0.112), radius=0.025),
+            _angled_arc_points(center=(-0.004, 0.116), radius=0.024, start_angle=1.55, end_angle=4.7),
         ]
     if variant == 2:
         return [
@@ -327,7 +357,7 @@ def _variant_extra_marks(variant: int, score: int) -> list[Stroke]:
             polyline_points([(-0.006, 0.108), (0.02, 0.138), (0.046, 0.108)]),
         ]
     return [
-        wave_points(start=(-0.036, 0.124), width=0.082, amplitude=0.008, cycles=1.3, samples=36),
+        _zigzag_wave_points(start=(-0.036, 0.124), width=0.082, amplitude=0.008, cycles=1.3),
         polyline_points([(-0.042, 0.1), (0.0, 0.137), (0.044, 0.1)]),
     ]
 

@@ -21,12 +21,14 @@ class TextToDrawingTest(unittest.TestCase):
         self.assertEqual(payload["frame"], "canvas")
         self.assertIn("今日玄运", payload["reading"])
         self.assertIn("太极印", payload["interpretation"])
-        self.assertGreaterEqual(len(payload["symbols"]), 5)
+        self.assertLessEqual(len(payload["symbols"]), 3)
         self.assertGreater(len(payload["points"]), 50)
 
         points = np.asarray(payload["points"])
         self.assertEqual(points.shape[1], 3)
         self.assertGreater(points[:, 2].max(), points[:, 2].min())
+        draw_points = points[points[:, 2] <= payload["draw_z"] + 1e-6]
+        self.assertLessEqual(len(draw_points), 100)
 
     def test_payload_round_trips_to_sim_strokes(self):
         payload = toolpath_payload_from_text("circle", today=date(2026, 5, 23))
