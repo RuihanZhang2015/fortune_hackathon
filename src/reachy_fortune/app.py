@@ -22,6 +22,23 @@ STATIC_DIR = ROOT / "web" / "reachy_fortune"
 OUTPUT_DIR = ROOT / "outputs" / "reachy_fortune"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def _load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv(ROOT / ".env")
+
 MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2")
 VOICE = os.getenv("OPENAI_REALTIME_VOICE", "marin")
 TRANSCRIPTION_MODEL = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Reachy Fortune Conversation</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/style.css?v=4" />
   </head>
   <body>
     <main>
@@ -12,6 +12,7 @@
         <h1>Reachy 玄运对话</h1>
         <div class="controls">
           <button id="connect">Connect voice</button>
+          <button id="sendTest" disabled>Send test</button>
           <button id="disconnect" disabled>Disconnect</button>
         </div>
         <div class="output-panel">
@@ -23,10 +24,10 @@
           </label>
         </div>
         <p id="status">Idle</p>
-        <audio id="remoteAudio" autoplay playsinline></audio>
+        <audio id="remoteAudio" autoplay playsinline controls></audio>
+        <div id="transcript" aria-live="polite"></div>
         <details class="debug-panel">
-          <summary>Debug transcript</summary>
-          <div id="transcript" aria-live="polite"></div>
+          <summary>Debug log</summary>
           <pre id="log"></pre>
         </details>
       </section>
@@ -35,6 +36,6 @@
         <p id="interpretation"></p>
       </section>
     </main>
-    <script src="/static/main.js"></script>
+    <script src="/static/main.js?v=4"></script>
   </body>
 </html>

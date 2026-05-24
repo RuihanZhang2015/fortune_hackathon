@@ -1,8 +1,10 @@
 let pc;
 let dc;
 const handledToolCalls = new Set();
+const SILENT_WAV = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
 
 const connectButton = document.querySelector("#connect");
+const sendTestButton = document.querySelector("#sendTest");
 const disconnectButton = document.querySelector("#disconnect");
 const statusEl = document.querySelector("#status");
 const logEl = document.querySelector("#log");
@@ -13,6 +15,7 @@ const remoteAudio = document.querySelector("#remoteAudio");
 const audioOutputEl = document.querySelector("#audioOutput");
 let assistantTranscript = "";
 let userTranscript = "";
+let initialGreetingSent = false;
 
 function log(message, data) {
   const suffix = data ? `\n${JSON.stringify(data, null, 2)}` : "";
@@ -25,12 +28,25 @@ function setStatus(text) {
 }
 
 connectButton.addEventListener("click", connectRealtime);
+sendTestButton.addEventListener("click", () => sendUserText("请用中文回复：语音测试成功。"));
 disconnectButton.addEventListener("click", disconnectRealtime);
 audioOutputEl.addEventListener("change", applyAudioOutputDevice);
 refreshAudioOutputDevices();
 
 async function connectRealtime() {
+  try {
+    await startRealtimeConnection();
+  } catch (error) {
+    setStatus(`Connection failed: ${formatError(error)}`);
+    log("Connection failed", { message: formatError(error) });
+    disconnectRealtime();
+  }
+}
+
+async function startRealtimeConnection() {
   setStatus("Requesting microphone...");
+  await unlockAudioPlayback();
+  initialGreetingSent = false;
   pc = new RTCPeerConnection();
   pc.addEventListener("connectionstatechange", () => {
     log("Peer connection state", {
@@ -58,16 +74,10 @@ async function connectRealtime() {
 
   dc = pc.createDataChannel("oai-events");
   dc.addEventListener("open", () => {
-    setStatus("Connected. Speak to Reachy.");
+    setStatus("Connected. Warming up Reachy...");
     connectButton.disabled = true;
+    sendTestButton.disabled = false;
     disconnectButton.disabled = false;
-    dc.send(JSON.stringify({
-      type: "response.create",
-      response: {
-        output_modalities: ["audio"],
-        instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
-      },
-    }));
     ensureRemoteAudioPlaying("connected");
   });
   dc.addEventListener("message", handleRealtimeEvent);
@@ -86,6 +96,34 @@ async function connectRealtime() {
   const answerSdp = await response.text();
   log("Remote SDP summary", summarizeSdp(answerSdp));
   await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+}
+
+async function unlockAudioPlayback() {
+  try {
+    remoteAudio.srcObject = null;
+    remoteAudio.src = SILENT_WAV;
+    remoteAudio.muted = true;
+    await remoteAudio.play();
+    remoteAudio.pause();
+    remoteAudio.removeAttribute("src");
+    remoteAudio.load();
+    remoteAudio.muted = false;
+    remoteAudio.volume = 1;
+    log("Audio playback unlocked");
+  } catch (error) {
+    log("Audio unlock skipped", { message: error.message });
+    remoteAudio.muted = false;
+  }
+}
+
+function formatError(error) {
+  const message = error?.message || String(error);
+  try {
+    const parsed = JSON.parse(message);
+    return parsed.detail || message;
+  } catch {
+    return message;
+  }
 }
 
 function summarizeSdp(sdp) {
@@ -112,7 +150,7 @@ async function ensureRemoteAudioPlaying(source) {
       volume: remoteAudio.volume,
     });
   } catch (error) {
-    setStatus("Audio is blocked. Click Play audio.");
+    setStatus("Audio playback is blocked by the browser.");
     log("Remote audio playback blocked", { source, message: error.message });
   }
 }
@@ -126,6 +164,7 @@ function disconnectRealtime() {
   pc = null;
   dc = null;
   connectButton.disabled = false;
+  sendTestButton.disabled = true;
   disconnectButton.disabled = true;
   setStatus("Disconnected");
 }
@@ -154,7 +193,20 @@ function sendUserText(text) {
 async function handleRealtimeEvent(raw) {
   const event = JSON.parse(raw.data);
   if (event.type === "error") {
+    setStatus(`Realtime error: ${event.error?.message || "unknown error"}`);
     log("Realtime error", event);
+  }
+  if (event.type === "session.created" || event.type === "session.updated") {
+    setStatus("Connected. Speak to Reachy.");
+    log(event.type, event.session ? {
+      model: event.session.model,
+      output_modalities: event.session.output_modalities,
+      voice: event.session.audio?.output?.voice,
+    } : undefined);
+    sendInitialGreeting();
+  }
+  if (event.type === "response.created") {
+    setStatus("Reachy is responding...");
   }
   if (event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") {
     assistantTranscript += event.delta || "";
@@ -163,6 +215,7 @@ async function handleRealtimeEvent(raw) {
   if ((event.type === "response.output_audio_transcript.done" || event.type === "response.audio_transcript.done") && event.transcript) {
     assistantTranscript = event.transcript;
     renderTranscript();
+    setStatus("Reachy replied.");
     log(`Reachy transcript: ${event.transcript}`);
     fetch("/api/reachy/express/mystical", { method: "POST" }).catch(() => {});
   }
@@ -173,6 +226,7 @@ async function handleRealtimeEvent(raw) {
   if ((event.type === "response.output_text.done" || event.type === "response.text.done") && event.text) {
     assistantTranscript = event.text;
     renderTranscript();
+    setStatus("Reachy replied.");
     log(`Reachy text: ${event.text}`);
   }
   if (event.type === "conversation.item.input_audio_transcription.delta") {
@@ -185,12 +239,27 @@ async function handleRealtimeEvent(raw) {
     log(`You transcript: ${userTranscript}`);
   }
   if (event.type === "response.done") {
+    setStatus("Connected. Speak to Reachy.");
     captureTranscriptFromResponse(event.response);
     const calls = event.response?.output?.filter((x) => x.type === "function_call" && x.name === "robot_draw") || [];
     for (const item of calls) {
       await handleRobotDrawCall(item);
     }
   }
+}
+
+function sendInitialGreeting() {
+  if (initialGreetingSent || !dc || dc.readyState !== "open") {
+    return;
+  }
+  initialGreetingSent = true;
+  dc.send(JSON.stringify({
+    type: "response.create",
+    response: {
+      output_modalities: ["audio"],
+      instructions: "用中文简单问候用户，并说明你已经准备好听他说话。",
+    },
+  }));
 }
 
 function captureTranscriptFromResponse(response) {
