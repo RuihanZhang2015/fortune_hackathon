@@ -39,6 +39,13 @@ function setStatus(text) {
 
 const DRAWING_SCALE = 0.65;
 
+function normalizeStrokes(strokes) {
+  if (!strokes?.length) return null;
+  // Model sometimes sends [[x,y],...] instead of [[[x,y],...]]; wrap if needed.
+  if (typeof strokes[0][0] === "number") return [strokes];
+  return strokes;
+}
+
 function drawStrokesOnCanvas(strokes) {
   const size = canvasEl.width;
   const margin = 90;
@@ -442,8 +449,9 @@ async function handleRobotDrawCall(item, source = "auto") {
   setStatus("Drawing fortune...");
 
   // Render strokes on canvas immediately — no network roundtrip needed.
-  if (args.strokes?.length) {
-    drawStrokesOnCanvas(args.strokes);
+  const strokes = normalizeStrokes(args.strokes);
+  if (strokes) {
+    drawStrokesOnCanvas(strokes);
   }
 
   // Immediately close the tool call and trigger voice response — don't wait for the backend.
@@ -468,7 +476,7 @@ async function handleRobotDrawCall(item, source = "auto") {
         prompt: args.prompt || "给我分析今天的运势",
         style: args.style || "道教符箓、毛笔、玄妙、抽象",
         reachy_output: true,
-        strokes: args.strokes || null,
+        strokes: normalizeStrokes(args.strokes),
         title: args.title || null,
         reading: args.reading || null,
         interpretation: args.interpretation || null,

@@ -340,7 +340,11 @@ IMPORTANT: Any time the user says something like "draw me a fortune", "can you d
 [Coordinate system] Units: meters, origin at paper center. x in [-0.20, 0.20], y in [-0.15, 0.15], two decimal places.
 
 [One-stroke rules]
-- strokes must contain exactly 1 stroke: one continuous path [[x,y],...] drawn without lifting the pen
+- strokes is a JSON array containing exactly 1 stroke (one inner array of [x,y] points):
+  "strokes": [ [ [x1,y1], [x2,y2], [x3,y3], ... ] ]
+              ^outer=list of strokes  ^inner=list of [x,y] points
+  WRONG: "strokes": [ [x1,y1], [x2,y2], ... ]   ← missing the outer stroke wrapper
+  RIGHT: "strokes": [ [ [x1,y1], [x2,y2], ... ] ]
 - 60-100 points, large figure filling most of the canvas
 - Circle approximation (radius r, center cx,cy, 12 points):
   [cx+r,cy],[cx+0.87r,cy+0.5r],[cx+0.5r,cy+0.87r],[cx,cy+r],
